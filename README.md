@@ -66,20 +66,20 @@ Full-Stack-Project--main/
 │   ├── app.js                # Lógica principal de la aplicación
 │   └── database.js           # Simulación de base de datos con localStorage
 │
-├── server/                    # Backend (Express + MySQL)
+├── server/                    # Backend (Express + Supabase/PostgreSQL)
 │   ├── index.js              # Servidor Express principal
-│   ├── db.js                 # Configuración de conexión a MySQL
-│   ├── init_db.js            # Script de migración de base de datos
+│   ├── db.js                 # Configuración de conexión a Supabase (PostgreSQL)
+│   ├── init_db.js            # Script de migración (esquema + seeds)
 │   ├── outboxWorker.js       # Worker para reintentos de envío de correo
 │   ├── package.json          # Dependencias del servidor
 │   ├── README_API.md         # Documentación de la API
 │   └── node_modules/         # Dependencias instaladas
 │
-├── database/                  # Archivos relacionados con la base de datos
-│   ├── database.sql          # Esquema SQL alternativo
-│   ├── Pluszone.sql          # Esquema SQL principal
+├── database/                  # Esquemas y datos de referencia
+│   ├── pluszone_supabase.sql # Esquema PostgreSQL para Supabase (activo)
+│   ├── Pluszone.sql          # Esquema MySQL legacy (referencia)
 │   ├── database.json         # Datos de ejemplo en formato JSON
-│   └── README_DB.md          # Documentación específica de la base de datos
+│   └── README_DB.md          # Documentación de la base de datos
 │
 ├── docs/                      # Documentación adicional
 │   └── DEPLOYMENT.md         # Guía de despliegue y troubleshooting
@@ -113,9 +113,9 @@ cd Full-Stack-Project--main
 ```bash
 cd server
 cp .env.example .env
-# Edita .env con tus credenciales de MySQL y SMTP
+# Edita .env con DATABASE_URL (Supabase) y SMTP. Ver docs/DEPLOYMENT.md
 npm install
-npm run migrate  # Crea la base de datos y tablas
+npm run migrate  # Aplica esquema y seeds en Supabase
 npm run dev      # Inicia el servidor en modo desarrollo
 ```
 
@@ -456,21 +456,21 @@ Las ofertas y candidatos se pueden filtrar por categorías:
 - En producción, se requiere implementar backend y base de datos real
 - Las contraseñas están en texto plano (solo para desarrollo)
 
-##  Backend y verificación por correo (añadido)
-Se ha añadido un servidor Express + MySQL en la carpeta `server` con los siguientes puntos importantes:
+## Backend, Supabase y verificación por correo
+El backend usa **Express + Supabase (PostgreSQL)** en la carpeta `server`:
 
-- Endpoint de registro: `POST /api/auth/register` (el correo debe pertenecer al dominio `@tecmilenio.mx`) ✅
-- En el registro se envía un código por correo (código numérico de 6 dígitos) usando Nodemailer.
-- Endpoint de verificación: `POST /api/auth/verify` para validar el código y activar la cuenta.
-- Endpoint de login: `POST /api/auth/login` (solo usuarios verificados pueden acceder)
-- Endpoint de perfiles: `GET /api/profiles` devuelve perfiles visibles (usuarios verificados)
+- **Base de datos**: Supabase. Configura `DATABASE_URL` en `server/.env` (Conexión directa en Supabase → Project Settings → Database).
+- **Registro**: `POST /api/auth/register` (correo debe ser `@tecmilenio.mx`). Se envía un **código de 7 dígitos** por correo (Nodemailer).
+- **Verificación**: `POST /api/auth/verify` para validar el código de 7 dígitos y activar la cuenta. El usuario **no puede entrar** hasta verificar.
+- **Login**: `POST /api/auth/login` (solo usuarios verificados pueden acceder).
+- **Perfiles**: `GET /api/profiles` devuelve perfiles de usuarios verificados.
 
 Instrucciones rápidas:
-1. Ve a la carpeta `server` y copia `.env.example` a `.env` con tus credenciales de MySQL y SMTP.
-2. Ejecuta `npm install`.
-3. Ejecuta `npm run migrate` desde la carpeta `server` para crear la base de datos `pluszone`, tablas y seeds.
-4. Ejecuta `npm run dev` para iniciar el servidor.
-5. Abre tu navegador en `http://localhost:4000` para usar la aplicación (el servidor sirve los archivos estáticos desde `client/` y la API en la misma URL).
+1. Ve a `server`, copia `.env.example` a `.env` y configura **DATABASE_URL** (Supabase) y SMTP.
+2. `npm install` y `npm run migrate` (aplica esquema y seeds en Supabase).
+3. `npm run dev` y abre `http://localhost:4000`.
+
+**Despliegue en GitHub Pages**: El workflow `.github/workflows/deploy-pages.yml` despliega el frontend (`client/`) en cada push a `main`. En el repo: Settings → Pages → Source: **GitHub Actions**. Luego edita `client/config.js` y asigna la URL de tu backend (`window.API_BASE = 'https://tu-backend.onrender.com';`). Ver `docs/DEPLOYMENT.md`.
 
 Para más detalles, consulta [`server/README_API.md`](server/README_API.md) y [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 

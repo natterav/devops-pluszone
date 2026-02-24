@@ -601,10 +601,10 @@
                 <button class="modal-close" onclick="closeVerifyModal()">×</button>
             </div>
             <div class="modal-body">
-                <p id="verifyMessage">Se ha enviado un código de verificación a tu correo. Ingresa el código a continuación.</p>
+                <p id="verifyMessage">Se ha enviado un código de verificación de 7 dígitos a tu correo. Ingresa el código a continuación.</p>
                 <div class="form-group">
                     <label for="verifyCodeInput">Código de verificación</label>
-                    <input type="text" id="verifyCodeInput" placeholder="123456" maxlength="6">
+                    <input type="text" id="verifyCodeInput" placeholder="1234567" maxlength="7" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
                 </div>
                 <div id="verifyFeedback" style="margin-top:0.5rem;color:#333"></div>
                 <div class="modal-actions" style="margin-top:1rem; display:flex; gap:0.5rem;">
@@ -616,7 +616,9 @@
         </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
+    <!-- Socket.IO: CDN para que funcione en GitHub Pages; en local el backend también sirve /socket.io -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="config.js"></script>
     <script src="database.js"></script>
     <script src="app.js"></script>
 </body>

@@ -2,13 +2,19 @@
 
 ## Archivos de Base de Datos
 
-### 1. `database.sql`
-Archivo SQL con la estructura completa de la base de datos para cuando tengas un backend (MySQL, PostgreSQL, etc.).
+### 1. `pluszone_supabase.sql` (activo)
+Esquema **PostgreSQL** para **Supabase**. Es el que usa el backend actual. Ejecútalo en el SQL Editor de Supabase o deja que `npm run migrate` (desde `server/`) lo aplique si tienes `DATABASE_URL` configurada.
 
-### 2. `database.json`
+### 2. `Pluszone.sql` (legacy)
+Esquema MySQL de referencia. La aplicación ya no usa MySQL; se migró a Supabase (PostgreSQL).
+
+### 3. `database.sql`
+Archivo SQL alternativo (referencia).
+
+### 4. `database.json`
 Archivo JSON con datos de ejemplo para referencia.
 
-### 3. `client/database.js`
+### 5. `client/database.js`
 Base de datos local usando **localStorage** de JavaScript. Funciona completamente en el navegador sin necesidad de backend. Este archivo se encuentra en la carpeta `client/` junto con los demás archivos del frontend.
 
 ## Usuarios Admin de Prueba

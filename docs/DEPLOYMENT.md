@@ -20,11 +20,12 @@ Cómo ejecutar la app localmente (paso a paso)
 
 Requisitos:
 - Node.js v16+ y npm
-- MySQL disponible y accesible desde la máquina o un servicio externo
+- Base de datos **Supabase (PostgreSQL)**. Obtén la URI en: Supabase → Project Settings → Database → Connection string → Direct connection.
 - Archivo `.env` en `server/` (copiar `.env.example`) con las variables:
-  - DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+  - **DATABASE_URL** (URI de conexión directa a Supabase, ej: `postgresql://postgres:[PASSWORD]@db.xxxx.supabase.co:5432/postgres`)
   - EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, EMAIL_SECURE
   - AUTO_MIGRATE (opcional, default=true)
+- Una vez creado el proyecto en Supabase, ejecuta el esquema `database/pluszone_supabase.sql` en el SQL Editor de Supabase (o deja que `npm run migrate` lo aplique si tienes DATABASE_URL en .env).
 
 Comandos útiles desde la raíz del repositorio (carpeta que contiene `Full-Stack-Project--main`):
 
@@ -51,19 +52,25 @@ Nota: también puedes trabajar directamente dentro de `Full-Stack-Project--main/
 Despliegue a un host (resumen, opciones comunes)
 
 Opción A — VPS (Linux) (ej. DigitalOcean, AWS EC2)
-1. Crear servidor con Node.js y MySQL instalados (o usar RDS para MySQL).
+1. Crear servidor con Node.js. La base de datos es Supabase (en la nube); no hace falta instalar MySQL.
 2. Subir código (git clone o FTP) al servidor.
-3. Crear un archivo `.env` con variables de entorno (no subir `.env` a git).
-4. Desde la raíz ejecutar: `npm run install-server` y `npm --prefix Full-Stack-Project--main/server run migrate` (si usas AUTO_MIGRATE=false).
-5. Iniciar con un proceso manager (pm2): `pm2 start Full-Stack-Project--main/server/index.js --name pluszone`.
+3. Crear un archivo `.env` en `server/` con DATABASE_URL (Supabase), EMAIL_*, etc. (no subir `.env` a git).
+4. Desde la raíz ejecutar: `npm run install-server` y `npm run migrate` (desde `server/`) si usas AUTO_MIGRATE=false.
+5. Iniciar con un proceso manager (pm2): `pm2 start server/index.js --name pluszone`.
 6. Configurar firewall y dominio/SSL (Let's Encrypt via Certbot) para servir la app.
 7. Configurar un SMTP real (SendGrid, Mailgun) para envío de correos.
 
 Opción B — Platform-as-a-Service (Render / Heroku / Railway)
-1. Crear un servicio web para la app Node y uno para la base de datos MySQL.
-2. Subir repo y setear variables de entorno en el dashboard (DB_*, EMAIL_*, AUTO_MIGRATE).
-3. En Deploy script, ejecutar `npm run install-server` y `npm --prefix Full-Stack-Project--main/server run migrate` como paso post-deploy si necesitas correr migraciones.
-4. Asegura que la plataforma tenga conectividad a la base de datos y que la app escuche en el puerto indicado por la plataforma.
+1. Crear un servicio web para la app Node. La base de datos es Supabase (externa); no hace falta servicio MySQL.
+2. Subir repo y setear variables de entorno en el dashboard: **DATABASE_URL** (URI Supabase), EMAIL_*, AUTO_MIGRATE.
+3. En Deploy script, ejecutar `npm run install-server` y `npm run migrate` (desde `server/`) si necesitas aplicar el esquema.
+4. Asegura que la app escuche en el puerto indicado por la plataforma (PORT).
+
+Opción C — GitHub Pages (frontend) + Backend en Render/Railway
+1. **Backend**: Despliega el servidor (`server/`) en Render, Railway o similar. Configura DATABASE_URL (Supabase) y variables de email. Anota la URL del backend (ej: `https://pluszone-api.onrender.com`).
+2. **Frontend en GitHub Pages**: En el repo, ve a Settings → Pages → Source: **GitHub Actions**. El workflow `.github/workflows/deploy-pages.yml` despliega la carpeta `client/` en cada push a `main`.
+3. **Configurar API en el frontend**: Edita `client/config.js` y asigna la URL de tu backend: `window.API_BASE = 'https://tu-backend.onrender.com';` (sin barra final). Haz commit y push para que el despliegue use esa URL.
+4. La app en GitHub Pages quedará en `https://<usuario>.github.io/<repo>/` y las peticiones irán a tu backend.
 
 Pruebas E2E sugeridas
 - Usar Mailtrap para pruebas de email (sandbox) y un script con Playwright para:
@@ -86,9 +93,9 @@ Recomendación específica para tu caso
 - Verifica el valor de `EMAIL_FROM` en `server/.env` (corrige `outlock.com` a la variante correcta o usa una dirección verificada por TurboSMTP). Después reinicia el servidor. Si después de eso sigues con `451 DNS temporary failure`, activa `EMAIL_API_ENABLED=true` (si tu cuenta soporta API) y prueba envío vía API antes de intentar más cambios o contactar soporte de TurboSMTP con el mensaje de error.
 
 Soporte y troubleshooting
-- Si ves `ER_ACCESS_DENIED_ERROR`, revisa credenciales DB.
+- Si ves error de conexión a la base de datos, revisa **DATABASE_URL** en `server/.env` (Supabase → Database → Connection string → Direct connection). Asegúrate de reemplazar `[YOUR-PASSWORD]` por la contraseña real.
 - Si el servidor no encuentra `nodemon`, instala dev deps con `npm run install-server` o ejecuta con `npm run server:start`.
-- Revisar logs (pm2 logs o la salida de nodemon) y revisar `server/init_db.js` si la migración falla.
+- Revisar logs (pm2 logs o la salida de nodemon) y revisar `server/init_db.js` si la migración falla. El esquema está en `database/pluszone_supabase.sql` (PostgreSQL para Supabase).
 
 ---
 Versión generada: 2026-02-03

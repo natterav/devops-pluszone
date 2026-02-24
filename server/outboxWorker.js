@@ -25,7 +25,6 @@ let SMTP_AVAILABLE = false;
   }
 })();
 
-// Minimal token cache
 let apiTokenCache = { token: null, expiresAt: 0 };
 async function getApiToken() {
   const enabled = (process.env.EMAIL_API_ENABLED || 'false').toLowerCase() === 'true';
@@ -60,58 +59,72 @@ async function sendViaApi({ to, subject, text }) {
 }
 
 async function processOne() {
-  const conn = await pool.getConnection();
+  let id = null;
+  let row = null;
+  const client = await pool.connect();
   try {
-    // Claim one pending job
-    const [uRes] = await conn.query("UPDATE email_outbox SET status='sending', updated_at=NOW() WHERE id = (SELECT id FROM (SELECT id FROM email_outbox WHERE status='pending' AND next_attempt_at <= NOW() ORDER BY next_attempt_at LIMIT 1) x)");
-    if (!uRes || uRes.affectedRows === 0) return; // nothing to process
-
-    const [[row]] = await conn.query('SELECT * FROM email_outbox WHERE status = ? ORDER BY updated_at DESC LIMIT 1', ['sending']);
-    if (!row) return;
-
-    const id = row.id;
-    const to = row.to_email;
-    const subject = row.subject;
-    const text = row.text;
-    const payload = row.payload ? JSON.parse(row.payload) : {};
-    const attempts = parseInt(row.attempts || '0', 10);
-
-    console.log('Worker: processing outbox id', id, 'to', to, 'attempts', attempts);
-
-    // Try API first
-    if ((process.env.EMAIL_API_ENABLED || 'false').toLowerCase() === 'true') {
-      const apiRes = await sendViaApi({ to, subject, text });
-      if (apiRes.sent) {
-        await conn.query('UPDATE email_outbox SET status = ?, attempts = attempts + 1, last_error = NULL, updated_at = NOW() WHERE id = ?', ['sent', id]);
-        console.log('Worker: sent via API id', id);
-        return;
-      }
-      console.warn('Worker: API send failed for id', id, apiRes.error);
+    await client.query('BEGIN');
+    const pick = await client.query(
+      `SELECT id FROM email_outbox WHERE status = 'pending' AND next_attempt_at <= NOW() ORDER BY next_attempt_at LIMIT 1 FOR UPDATE SKIP LOCKED`
+    );
+    if (!pick.rows || pick.rows.length === 0) {
+      await client.query('COMMIT');
+      return;
     }
+    id = pick.rows[0].id;
+    await client.query(`UPDATE email_outbox SET status = 'sending', updated_at = NOW() WHERE id = $1`, [id]);
+    const rowRes = await client.query('SELECT * FROM email_outbox WHERE id = $1', [id]);
+    row = rowRes.rows && rowRes.rows[0];
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 
-    // Try SMTP
-    if (SMTP_AVAILABLE) {
-      try {
-        const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-        await transporter.sendMail({ from, to, subject, text });
-        await conn.query('UPDATE email_outbox SET status = ?, attempts = attempts + 1, last_error = NULL, updated_at = NOW() WHERE id = ?', ['sent', id]);
-        console.log('Worker: sent via SMTP id', id);
-        return;
-      } catch (err) {
-        console.warn('Worker: SMTP send failed for id', id, err.message || err);
-      }
+  if (!row) return;
+  try {
+
+  const to = row.to_email;
+  const subject = row.subject;
+  const text = row.text;
+  const attempts = parseInt(row.attempts || '0', 10);
+
+  console.log('Worker: processing outbox id', id, 'to', to, 'attempts', attempts);
+
+  if ((process.env.EMAIL_API_ENABLED || 'false').toLowerCase() === 'true') {
+    const apiRes = await sendViaApi({ to, subject, text });
+    if (apiRes.sent) {
+      await pool.query('UPDATE email_outbox SET status = $1, attempts = attempts + 1, last_error = NULL, updated_at = NOW() WHERE id = $2', ['sent', id]);
+      console.log('Worker: sent via API id', id);
+      return;
     }
+    console.warn('Worker: API send failed for id', id, apiRes.error);
+  }
 
-    // Still failed: schedule retry or mark failed
-    const nextAttempts = attempts + 1;
-    const willFail = nextAttempts >= MAX_ATTEMPTS;
-    const backoffSecs = Math.floor(BASE * Math.pow(2, attempts));
-    const [res] = await conn.query('UPDATE email_outbox SET attempts = ?, last_error = ?, next_attempt_at = DATE_ADD(NOW(), INTERVAL ? SECOND), status = ? WHERE id = ?', [nextAttempts, 'transient failure', backoffSecs, willFail ? 'failed' : 'pending', id]);
-    console.log('Worker: updated outbox id', id, 'status', willFail ? 'failed' : 'pending', 'next in', backoffSecs, 's');
+  if (SMTP_AVAILABLE) {
+    try {
+      const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+      await transporter.sendMail({ from, to, subject, text });
+      await pool.query('UPDATE email_outbox SET status = $1, attempts = attempts + 1, last_error = NULL, updated_at = NOW() WHERE id = $2', ['sent', id]);
+      console.log('Worker: sent via SMTP id', id);
+      return;
+    } catch (err) {
+      console.warn('Worker: SMTP send failed for id', id, err.message || err);
+    }
+  }
+
+  const nextAttempts = attempts + 1;
+  const willFail = nextAttempts >= MAX_ATTEMPTS;
+  const backoffSecs = Math.floor(BASE * Math.pow(2, attempts));
+  await pool.query(
+    'UPDATE email_outbox SET attempts = $1, last_error = $2, next_attempt_at = NOW() + ($3 || \' seconds\')::interval, status = $4, updated_at = NOW() WHERE id = $5',
+    [nextAttempts, 'transient failure', String(backoffSecs), willFail ? 'failed' : 'pending', id]
+  );
+  console.log('Worker: updated outbox id', id, 'status', willFail ? 'failed' : 'pending', 'next in', backoffSecs, 's');
   } catch (err) {
     console.error('Worker error:', err);
-  } finally {
-    conn.release();
   }
 }
 

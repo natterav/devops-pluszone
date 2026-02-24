@@ -1,0 +1,32 @@
+# CI: verifica que el esquema Supabase y las migraciones sean válidos.
+# Repositorio: Avance-proyecto-PlusZone
+# Requiere: Supabase project linked (supabase link) para push real.
+
+name: Supabase CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Validate config and migrations
+        run: |
+          supabase db lint
+          echo "Supabase config and migrations OK"

@@ -1,3 +1,6 @@
+// Base URL de la API (vacío = mismo origen; en GitHub Pages usar config.js con la URL del backend)
+const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || '';
+
 // Datos mock de perfiles
 const mockProfiles = [
     // Candidatos (Empleados)
@@ -736,7 +739,7 @@ async function handleLogin(e) {
 
     // Intentar validar con la API si está disponible
     try {
-        const resp = await fetch('/api/auth/login', {
+        const resp = await fetch(API_BASE + '/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -921,7 +924,7 @@ async function handleRegister(e) {
 
     // Si existe un backend, usarlo (registros con verificación por email)
     try {
-        const resp = await fetch('/api/auth/register', {
+        const resp = await fetch(API_BASE + '/api/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, email, password, user_type: userType })
@@ -995,7 +998,7 @@ async function handleRegister(e) {
 // Obtener perfiles desde el servidor (si existe API)
 async function fetchProfiles() {
     try {
-        const resp = await fetch('/api/profiles');
+        const resp = await fetch(API_BASE + '/api/profiles');
         const data = await resp.json();
         if (!resp.ok) {
             console.warn('No se pudo obtener perfiles desde la API:', data.error || resp.statusText);
@@ -1037,7 +1040,7 @@ async function fetchProfiles() {
 (function setupSocket() {
     try {
         if (typeof io === 'function') {
-            const socket = io();
+            const socket = API_BASE ? io(API_BASE, { path: '/socket.io' }) : io();
             window.socket = socket;
 
             socket.on('connect', () => {
@@ -1181,8 +1184,8 @@ async function handleConfirmVerify() {
         return;
     }
 
-    if (!/^[0-9]{6}$/.test(code)) {
-        setVerifyFeedback('Ingresa un código de 6 dígitos válido', true);
+    if (!/^[0-9]{7}$/.test(code)) {
+        setVerifyFeedback('Ingresa un código de 7 dígitos válido', true);
         return;
     }
 
@@ -1190,7 +1193,7 @@ async function handleConfirmVerify() {
     setVerifyFeedback('Verificando...', false);
 
     try {
-        const resp = await fetch('/api/auth/verify', {
+        const resp = await fetch(API_BASE + '/api/auth/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, code })
@@ -1210,7 +1213,7 @@ async function handleConfirmVerify() {
         // Intentar auto-login si teníamos credenciales pendientes
         if (window._pendingVerification && window._pendingVerification.email && window._pendingVerification.password) {
             try {
-                const loginResp = await fetch('/api/auth/login', {
+                const loginResp = await fetch(API_BASE + '/api/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: window._pendingVerification.email, password: window._pendingVerification.password })
@@ -1276,7 +1279,7 @@ async function handleResendCode() {
     setVerifyFeedback('Reenviando código...', false);
 
     try {
-        const resp = await fetch('/api/auth/resend', {
+        const resp = await fetch(API_BASE + '/api/auth/resend', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email })
