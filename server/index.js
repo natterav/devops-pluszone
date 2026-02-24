@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcrypt');
-const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -439,28 +438,22 @@ app.post('/api/profiles', async (req, res) => {
   const { user_id, name, role } = req.body;
   if (!user_id || !name) return res.status(400).json({ error: 'Datos incompletos' });
 
-  const conn = await pool.getConnection();
   try {
-    const [result] = await conn.query('INSERT INTO profiles (user_id, name, role) VALUES (?, ?, ?)', [user_id, name, role || 'candidate']);
-    const newId = result.insertId;
+    const result = await pool.query('INSERT INTO profiles (user_id, name, role) VALUES ($1, $2, $3) RETURNING id', [user_id, name, role || 'candidate']);
+    const newId = result.rows[0].id;
 
-    // Recuperar perfil creado para emitir evento en tiempo real
     try {
-      const [rows] = await conn.query('SELECT p.*, u.email, u.user_type FROM profiles p JOIN users u ON p.user_id = u.id WHERE p.id = ? LIMIT 1', [newId]);
+      const { rows } = await pool.query('SELECT p.*, u.email, u.user_type FROM profiles p JOIN users u ON p.user_id = u.id WHERE p.id = $1 LIMIT 1', [newId]);
       const newProfile = rows && rows.length > 0 ? rows[0] : null;
-      if (newProfile) {
-        io.emit('profile_created', { profile: newProfile });
-      }
+      if (newProfile) io.emit('profile_created', { profile: newProfile });
     } catch (emitErr) {
       console.warn('Error al emitir profile_created:', emitErr);
     }
 
-    res.json({ ok: true, id: result.insertId });
+    res.json({ ok: true, id: newId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error interno' });
-  } finally {
-    conn.release();
   }
 });
 
@@ -495,44 +488,33 @@ async function ensureDatabaseReady() {
   while (attempt < maxRetries) {
     attempt++;
     try {
-      const conn = await pool.getConnection();
-      try {
-        // Probar si la tabla users existe
-        await conn.query('SELECT 1 FROM users LIMIT 1');
-        conn.release();
-        console.log('Base de datos lista: tablas disponibles.');
-        return;
-      } catch (err) {
-        conn.release();
-        if (err && (err.code === 'ER_NO_SUCH_TABLE' || /no such table/i.test(err.message))) {
-          console.log('Tablas faltantes detectadas.');
-          if (!autoMigrate) {
-            throw new Error('AUTO_MIGRATE=false y tabla(s) faltantes detectadas. Ejecuta manualmente `npm run migrate` en `server` o activa AUTO_MIGRATE.');
-          }
-          console.log('Ejecutando migración automática...');
-          await runMigrationProcess();
-          return;
+      await pool.query('SELECT 1 FROM users LIMIT 1');
+      console.log('Base de datos lista: tablas disponibles.');
+      return;
+    } catch (err) {
+      const noTable = err && (err.code === '42P01' || /relation "users" does not exist/i.test(err.message));
+      if (noTable) {
+        console.log('Tablas faltantes detectadas.');
+        if (!autoMigrate) {
+          throw new Error('AUTO_MIGRATE=false y tabla(s) faltantes. Ejecuta `npm run migrate` en server o corre database/pluszone_supabase.sql en Supabase.');
         }
-        console.log(`Intento ${attempt}/${maxRetries}: error consultando la base de datos: ${err.message}`);
+        console.log('Ejecutando migración automática...');
+        await runMigrationProcess();
+        return;
       }
-    } catch (connErr) {
-      // Si las credenciales son inválidas, no tiene sentido reintentar varias veces
-      if (connErr && connErr.code === 'ER_ACCESS_DENIED_ERROR') {
-        throw new Error('Acceso denegado al servidor MySQL. Revisa DB_USER/DB_PASSWORD en server/.env y que el servicio MySQL esté activo. Mensaje: ' + connErr.message);
+      if (err && (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.message.includes('password'))) {
+        throw new Error('No se pudo conectar a Supabase. Revisa DATABASE_URL en server/.env. Mensaje: ' + err.message);
       }
-      console.log(`Intento ${attempt}/${maxRetries}: no se pudo conectar a la base de datos: ${connErr.message}`);
+      console.log(`Intento ${attempt}/${maxRetries}: error consultando la base de datos: ${err.message}`);
     }
 
-    // Esperar antes del siguiente intento
     await new Promise(r => setTimeout(r, 1500));
   }
 
-  // Si luego de los reintentos sigue fallando, intentar una migración directa (si está permitido)
   if (!autoMigrate) {
-    throw new Error('Reintentos agotados y AUTO_MIGRATE=false. Ejecuta manualmente la migración en `server` con `npm run migrate`.');
+    throw new Error('Reintentos agotados. Ejecuta `npm run migrate` en server.');
   }
-
-  console.log('Reintentos agotados. Intentando ejecutar migración de todas formas...');
+  console.log('Reintentos agotados. Intentando migración...');
   await runMigrationProcess();
 }
 
