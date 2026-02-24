@@ -75,69 +75,54 @@ Full-Stack-Project--main/
 │   ├── README_API.md         # Documentación de la API
 │   └── node_modules/         # Dependencias instaladas
 │
-├── database/                  # Esquemas y datos de referencia
-│   ├── pluszone_supabase.sql # Esquema PostgreSQL para Supabase (activo)
-│   ├── Pluszone.sql          # Esquema MySQL legacy (referencia)
+├── database/                  # Datos de referencia
+│   ├── pluszone_supabase.sql # Esquema PostgreSQL (fallback para npm run migrate)
 │   ├── database.json         # Datos de ejemplo en formato JSON
 │   └── README_DB.md          # Documentación de la base de datos
 │
+├── supabase/                  # Supabase CLI (Avance-proyecto-PlusZone)
+│   ├── config.toml           # Configuración del proyecto
+│   ├── migrations/           # Esquema y RLS (supabase db push)
+│   └── seed.sql              # Datos iniciales (supabase db reset)
+│
 ├── docs/                      # Documentación adicional
-│   └── DEPLOYMENT.md         # Guía de despliegue y troubleshooting
+│   ├── DEPLOYMENT.md         # Guía de despliegue y troubleshooting
+│   └── SUPABASE_SETUP.md     # 10 pasos Supabase + conectar a GitHub (Avance-proyecto-PlusZone)
 │
 └── README.md                  # Este archivo (documentación principal)
 ```
 
-## 🚀 Instalación
+## 🌐 Acceso a la aplicación
 
-### Opción 1: Solo Frontend (modo demo con localStorage)
+**PlusZone** está desplegada como página web en **GitHub Pages**:
 
-1. Clona el repositorio:
-```bash
-git clone <repository-url>
-cd Full-Stack-Project--main
-```
+**Repositorio:** [leodaniel-rgb/Avance-proyecto-PlusZone](https://github.com/leodaniel-rgb/Avance-proyecto-PlusZone)
 
-2. Abre el archivo `client/index.html` en tu navegador web moderno.
+**URL de la aplicación:** **https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**
 
-**Nota**: Esta opción no requiere servidor web ni instalación de dependencias. La aplicación funciona completamente en el cliente usando localStorage.
+Para que **login, registro y perfiles** funcionen en esa URL (configuración única):
 
-### Opción 2: Full Stack (con backend y base de datos)
+1. **Habilitar GitHub Pages**: Repositorio → **Settings → Pages → Source: GitHub Actions**.
+2. **Desplegar el backend** (carpeta `server/`) en [Render](https://render.com), [Railway](https://railway.app) o similar. Configurar **DATABASE_URL** (Supabase) y **SUPABASE_JWT_SECRET** (Supabase → Project Settings → API → JWT Secret). Ver [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+3. **Variables del repositorio**: **Settings → Secrets and variables → Actions → Variables**. Crear:
+   - **`API_BASE_URL`**: URL del backend **sin barra final** (ej. `https://pluszone-api.onrender.com`).
+   - **`SUPABASE_URL`**: URL del proyecto (ej. `https://xxxx.supabase.co`).
+   - **`SUPABASE_ANON_KEY`**: Clave anónima (Supabase → Project Settings → API → anon public).
+4. En **Supabase Dashboard → Authentication → URL Configuration**: añadir **Site URL** `https://leodaniel-rgb.github.io` y en **Redirect URLs** añadir `https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**`.
+5. Push a `main` (o ejecutar el workflow "Deploy to GitHub Pages"). A partir de entonces solo hay que entrar a **https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/** para usar la app.
 
-1. Clona el repositorio:
-```bash
-git clone <repository-url>
-cd Full-Stack-Project--main
-```
+## 🚀 Uso
 
-2. Configura el servidor:
-```bash
-cd server
-cp .env.example .env
-# Edita .env con DATABASE_URL (Supabase) y SMTP. Ver docs/DEPLOYMENT.md
-npm install
-npm run migrate  # Aplica esquema y seeds en Supabase
-npm run dev      # Inicia el servidor en modo desarrollo
-```
+### Iniciar sesión
 
-3. Abre tu navegador en `http://localhost:4000`
+1. Entra a la URL de la aplicación (GitHub Pages o la que tengas configurada).
+2. Elige tipo de usuario (Empleado o Empresa).
+3. Regístrate con un correo **@tecmilenio.mx** o inicia sesión si ya tienes cuenta.
+4. Si acabas de registrarte, **revisa tu correo** y confirma con el enlace que envía Supabase (no se usa SMTP ni APIs externas).
 
-Para más detalles sobre el despliegue, consulta [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+### Modo demo (sin backend)
 
-##  Uso
-
-### Iniciar Sesión
-
-1. Abre `client/index.html` en tu navegador (modo demo) o accede a `http://localhost:4000` (con servidor)
-2. Selecciona tu tipo de usuario (Empleado o Empresa)
-3. Ingresa tus credenciales o regístrate
-
-### Modo Demo
-
-Para probar la aplicación sin registro, puedes usar el modo demo:
-- **Empleado**: Selecciona "Empleado" en el login
-- **Empresa**: Selecciona "Empresa" en el login
-
-El sistema creará automáticamente un usuario de prueba.
+Si abres la app sin backend configurado (o en modo solo frontend), puedes usar el modo demo: elige "Empleado" o "Empresa" en el login y el sistema creará un usuario de prueba en memoria.
 
 ### Navegación
 
@@ -296,7 +281,6 @@ El sistema creará automáticamente un usuario de prueba.
 - `matches`: Matches realizados
 - `messages`: Mensajes (preparado)
 
-**Nota**: En producción, esto debería conectarse a un backend real con base de datos SQL/NoSQL.
 
 ---
 
@@ -337,25 +321,18 @@ El sistema creará automáticamente un usuario de prueba.
 
 ---
 
-### Base de Datos (`database/`)
+### Base de Datos (Supabase)
 
-#### `database/Pluszone.sql`
-**Descripción**: Esquema SQL principal para MySQL. Contiene la estructura completa de tablas y datos iniciales.
+#### `supabase/migrations/`
+**Descripción**: Esquema PostgreSQL y políticas RLS. Aplicar con `supabase db push` o desde el SQL Editor de Supabase.
 
-**Tablas principales**:
-- `users`: Usuarios del sistema
-- `profiles`: Perfiles de candidatos y ofertas
-- `swipes`: Historial de interacciones
-- `matches`: Conexiones exitosas
-- `messages`: Sistema de mensajería
-- `companies`: Información de empresas
+**Tablas principales**: `users`, `profiles`, `swipes`, `matches`, `messages`, `email_verifications`, `email_outbox`.
 
-**Uso**: Este archivo es usado automáticamente por `server/init_db.js` durante la migración.
+#### `supabase/seed.sql`
+**Descripción**: Datos iniciales (usuarios de prueba con contraseñas hasheadas con pgcrypto). Se ejecuta con `supabase db reset` (local).
 
----
-
-#### `database/database.sql`
-**Descripción**: Esquema SQL alternativo para referencia.
+#### `database/pluszone_supabase.sql`
+**Descripción**: Mismo esquema en un solo archivo. Lo usa `npm run migrate` (desde `server/`) como fallback.
 
 ---
 
@@ -456,25 +433,13 @@ Las ofertas y candidatos se pueden filtrar por categorías:
 - En producción, se requiere implementar backend y base de datos real
 - Las contraseñas están en texto plano (solo para desarrollo)
 
-## Backend, Supabase y verificación por correo
-El backend usa **Express + Supabase (PostgreSQL)** en la carpeta `server`:
+## Backend y verificación por correo
 
-- **Base de datos**: Supabase. Configura `DATABASE_URL` en `server/.env` (Conexión directa en Supabase → Project Settings → Database).
-- **Registro**: `POST /api/auth/register` (correo debe ser `@tecmilenio.mx`). Se envía un **código de 7 dígitos** por correo (Nodemailer).
-- **Verificación**: `POST /api/auth/verify` para validar el código de 7 dígitos y activar la cuenta. El usuario **no puede entrar** hasta verificar.
-- **Login**: `POST /api/auth/login` (solo usuarios verificados pueden acceder).
-- **Perfiles**: `GET /api/profiles` devuelve perfiles de usuarios verificados.
+- **Autenticación**: **Supabase Auth**. El correo de verificación lo envía **Supabase** (sin SMTP ni APIs externas). Activa "Confirm email" en Supabase → Authentication → Providers → Email.
+- **Backend** (carpeta `server`): **Express + Supabase (PostgreSQL)**. Despliega y configura **DATABASE_URL** y **SUPABASE_JWT_SECRET** (Supabase → Project Settings → API → JWT Secret). La API sirve perfiles, matches y tiempo real (Socket.IO).
+- **URL de la app**: **https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**
 
-Instrucciones rápidas:
-1. Ve a `server`, copia `.env.example` a `.env` y configura **DATABASE_URL** (Supabase) y SMTP.
-2. `npm install` y `npm run migrate` (aplica esquema y seeds en Supabase).
-3. `npm run dev` y abre `http://localhost:4000`.
-
-**Despliegue en GitHub Pages**: El workflow `.github/workflows/deploy-pages.yml` despliega el frontend (`client/`) en cada push a `main`. En el repo: Settings → Pages → Source: **GitHub Actions**. Luego edita `client/config.js` y asigna la URL de tu backend (`window.API_BASE = 'https://tu-backend.onrender.com';`). Ver `docs/DEPLOYMENT.md`.
-
-Para más detalles, consulta [`server/README_API.md`](server/README_API.md) y [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-
-Esto permite que cuando un nuevo usuario se registre y verifique su correo, su perfil aparezca automáticamente para el resto de usuarios. Además, el servidor emite eventos en tiempo real (Socket.IO, evento `user_verified`) para notificar a clientes conectados y evitar depender únicamente del polling periodico.
+Para desplegar y dejar la página funcional con un solo enlace, sigue [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## 👨 Desarrollo
 

@@ -2,19 +2,18 @@
 
 ## Archivos de Base de Datos
 
-### 1. `pluszone_supabase.sql` (activo)
-Esquema **PostgreSQL** para **Supabase**. Es el que usa el backend actual. Ejecútalo en el SQL Editor de Supabase o deja que `npm run migrate` (desde `server/`) lo aplique si tienes `DATABASE_URL` configurada.
+### 1. Supabase (esquema y seeds)
+- **`supabase/migrations/`**: Esquema PostgreSQL y RLS. Aplicar con Supabase CLI: `supabase db push` o desde el SQL Editor de Supabase.
+- **`supabase/seed.sql`**: Datos iniciales. Se ejecuta con `supabase db reset` (local) o manualmente en remoto.
+- **`supabase/config.toml`**: Configuración del proyecto (project_id: avance-proyecto-pluszone). Vincula con `supabase link`.
 
-### 2. `Pluszone.sql` (legacy)
-Esquema MySQL de referencia. La aplicación ya no usa MySQL; se migró a Supabase (PostgreSQL).
+### 2. `pluszone_supabase.sql` (fallback)
+Mismo esquema en un solo archivo. Lo usa `npm run migrate` (desde `server/`) si prefieres no usar la CLI. La fuente recomendada es `supabase/migrations/`.
 
-### 3. `database.sql`
-Archivo SQL alternativo (referencia).
-
-### 4. `database.json`
+### 3. `database.json`
 Archivo JSON con datos de ejemplo para referencia.
 
-### 5. `client/database.js`
+### 4. `client/database.js`
 Base de datos local usando **localStorage** de JavaScript. Funciona completamente en el navegador sin necesidad de backend. Este archivo se encuentra en la carpeta `client/` junto con los demás archivos del frontend.
 
 ## Usuarios Admin de Prueba
@@ -132,6 +131,6 @@ Database.addMatch(userId, profileId);
 ## Migración y ejecución local (incluye Socket.IO)
 - Se añadió un script de migración y un servidor en `server/`.
 - Para crear la base de datos y seeds localmente ejecuta desde `server/`: `npm run migrate`.
-- Inicia el servidor con `npm run dev`. El servidor sirve la app y la API en `http://localhost:4000`.
+- La app se usa como página web en GitHub Pages (`https://<owner>.github.io/Avance-proyecto-PlusZone/`). El backend se despliega aparte y se configura con la variable **API_BASE_URL** en el repositorio.
 - El servidor emite eventos en tiempo real con Socket.IO (`user_verified`, `profile_created`) para notificar a los clientes cuando un nuevo perfil está disponible.
 

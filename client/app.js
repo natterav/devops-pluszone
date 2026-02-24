@@ -1,5 +1,10 @@
-// Base URL de la API (vacío = mismo origen; en GitHub Pages usar config.js con la URL del backend)
+// Base URL de la API y Supabase (inyectados en deploy: leodaniel-rgb/Avance-proyecto-PlusZone)
 const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || '';
+const SUPABASE_URL = (typeof window !== 'undefined' && window.SUPABASE_URL) || '';
+const SUPABASE_ANON_KEY = (typeof window !== 'undefined' && window.SUPABASE_ANON_KEY) || '';
+const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY && typeof window.supabase !== 'undefined')
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 // Datos mock de perfiles
 const mockProfiles = [
@@ -687,15 +692,44 @@ function getAvailableCategories() {
 }
 
 // ===== PANTALLA DE CARGA =====
-function initLoadingScreen() {
-    setTimeout(() => {
-        const loadingScreen = document.getElementById('loadingScreen');
-        loadingScreen.classList.add('hidden');
-        setTimeout(() => {
-            loadingScreen.style.display = 'none';
-            showAuthScreen();
-        }, 500);
-    }, 2000);
+async function initLoadingScreen() {
+    await new Promise(r => setTimeout(r, 2000));
+    const loadingScreen = document.getElementById('loadingScreen');
+    loadingScreen.classList.add('hidden');
+    await new Promise(r => setTimeout(r, 500));
+    loadingScreen.style.display = 'none';
+
+    // Restaurar sesión Supabase si existe (p. ej. usuario volvió tras confirmar correo)
+    if (supabase && API_BASE) {
+        try {
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.access_token) {
+                const resp = await fetch(API_BASE + '/api/auth/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.session.access_token }
+                });
+                const sessionData = await resp.json();
+                if (resp.ok && sessionData.user) {
+                    state.currentUser = {
+                        id: sessionData.user.id,
+                        email: sessionData.user.email,
+                        name: sessionData.user.name,
+                        type: sessionData.user.type,
+                        imageUrl: sessionData.user.imageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&h=400&fit=crop',
+                        description: sessionData.user.description || '',
+                        techStack: []
+                    };
+                    document.getElementById('authScreen').style.display = 'none';
+                    document.getElementById('app').style.display = 'flex';
+                    showMainApp();
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Session restore:', e);
+        }
+    }
+    showAuthScreen();
 }
 
 // ===== AUTENTICACIÓN =====
@@ -737,7 +771,50 @@ async function handleLogin(e) {
     // Limpiar mensajes de error previos
     clearAuthErrors();
 
-    // Intentar validar con la API si está disponible
+    // 1) Supabase Auth (correo lo envía Supabase, sin SMTP)
+    if (supabase && API_BASE) {
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (!error && data.session) {
+                const resp = await fetch(API_BASE + '/api/auth/session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.session.access_token }
+                });
+                const sessionData = await resp.json();
+                if (resp.ok && sessionData.user) {
+                    state.currentUser = {
+                        id: sessionData.user.id,
+                        email: sessionData.user.email,
+                        name: sessionData.user.name,
+                        type: sessionData.user.type,
+                        imageUrl: sessionData.user.imageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&h=400&fit=crop',
+                        description: sessionData.user.description || '',
+                        techStack: []
+                    };
+                    showAuthSuccess('loginForm', 'Sesión iniciada. Redirigiendo...');
+                    setTimeout(() => {
+                        document.getElementById('authScreen').style.display = 'none';
+                        document.getElementById('app').style.display = 'flex';
+                        showMainApp();
+                        addActivity('Bienvenido a PlusZone', 'Comienza a deslizar para encontrar tu próximo match');
+                    }, 800);
+                    return;
+                }
+            }
+            if (error) {
+                if (error.message && (error.message.includes('Email not confirmed') || error.message.includes('confirm'))) {
+                    showAuthError('loginForm', 'Confirma tu correo antes de iniciar sesión. Revisa tu bandeja (y spam).');
+                    return;
+                }
+                showAuthError('loginForm', error.message || 'Error al iniciar sesión');
+                return;
+            }
+        } catch (e) {
+            console.warn('Supabase login error:', e);
+        }
+    }
+
+    // 2) API legacy (código 7 dígitos)
     try {
         const resp = await fetch(API_BASE + '/api/auth/login', {
             method: 'POST',
@@ -746,17 +823,14 @@ async function handleLogin(e) {
         });
         const data = await resp.json();
         if (!resp.ok) {
-            // Si el backend indica que el correo no está verificado, abrir modal para verificar
             if (resp.status === 403 && data.error && data.error.toLowerCase().includes('verificado')) {
                 window._pendingVerification = { email, password };
                 openVerifyModal(email, 'Tu correo no está verificado. Ingresa el código que te fue enviado.');
                 return;
             }
-
             showAuthError('loginForm', data.error || 'Error al iniciar sesión');
             return;
         }
-
         state.currentUser = {
             id: data.user.id,
             email: data.user.email,
@@ -766,21 +840,16 @@ async function handleLogin(e) {
             description: data.user.description || '',
             techStack: []
         };
-
         showAuthSuccess('loginForm', 'Sesión iniciada. Redirigiendo...');
         setTimeout(() => {
-            const authScreen = document.getElementById('authScreen');
-            const app = document.getElementById('app');
-            if (authScreen) authScreen.style.display = 'none';
-            if (app) app.style.display = 'flex';
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('app').style.display = 'flex';
             showMainApp();
             addActivity('Bienvenido a PlusZone', 'Comienza a deslizar para encontrar tu próximo match');
         }, 800);
-
         return;
     } catch (err) {
         console.warn('API login falla o no disponible:', err);
-        // Si falla la petición, caer al modo demo o DB local
     }
 
     // Intentar con base de datos local (demo) si existe
@@ -918,34 +987,59 @@ async function handleRegister(e) {
         showAuthError('registerForm', 'Por favor, ingresa un email válido');
         return;
     }
+    if (!email.toLowerCase().endsWith('@tecmilenio.mx')) {
+        showAuthError('registerForm', 'El correo debe ser @tecmilenio.mx');
+        return;
+    }
 
     // Limpiar mensajes de error previos
     clearAuthErrors();
 
-    // Si existe un backend, usarlo (registros con verificación por email)
+    // 1) Supabase Auth (Supabase envía el correo de verificación, sin SMTP ni API externa)
+    if (supabase && API_BASE) {
+        try {
+            const redirectTo = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin + (window.location.pathname || '/') : undefined;
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: { full_name: name, user_type: userType },
+                    emailRedirectTo: redirectTo
+                }
+            });
+            if (!error) {
+                showAuthSuccess('registerForm', 'Cuenta creada. Revisa tu correo (@tecmilenio.mx) y haz clic en el enlace para confirmar. Luego podrás iniciar sesión.');
+                return;
+            }
+            if (error.message && error.message.toLowerCase().includes('already registered')) {
+                showAuthError('registerForm', 'Este correo ya está registrado. Inicia sesión o usa otro correo.');
+                return;
+            }
+            showAuthError('registerForm', error.message || 'Error en el registro');
+            return;
+        } catch (e) {
+            console.error('Supabase signUp error:', e);
+        }
+    }
+
+    // 2) API legacy (código 7 dígitos por SMTP)
     try {
         const resp = await fetch(API_BASE + '/api/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, email, password, user_type: userType })
         });
-
         const data = await resp.json();
         if (!resp.ok) {
             showAuthError('registerForm', data.error || 'Error en el registro');
             return;
         }
-
         showAuthSuccess('registerForm', 'Cuenta creada. Se ha enviado un código de verificación a tu correo.');
-
-        // Abrir modal de verificación
         window._pendingVerification = { email, password, name };
         openVerifyModal(email, 'Se ha enviado un código de verificación a ' + email);
-
         return;
     } catch (err) {
         console.error(err);
-        // Si falla la petición o no hay backend, caer al modo demo original
     }
 
     // Modo demo: Registro sin base de datos (para diseño)
