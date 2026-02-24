@@ -1,6 +1,7 @@
-# Despliega el frontend (client/) en GitHub Pages.
-# Repositorio: Avance-proyecto-PlusZone
-# URL resultante: https://<owner>.github.io/Avance-proyecto-PlusZone/
+# Despliega el frontend en GitHub Pages (página web accesible).
+# Repositorio: leodaniel-rgb/Avance-proyecto-PlusZone
+# URL: https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/
+# Variables en Settings → Actions → Variables: API_BASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY
 
 name: Deploy to GitHub Pages
 
@@ -11,6 +12,7 @@ on:
 
 env:
   REPO_NAME: Avance-proyecto-PlusZone
+  REPO_OWNER: leodaniel-rgb
 
 permissions:
   contents: read
@@ -26,18 +28,33 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Preparar artefacto para GitHub Pages
+        run: |
+          mkdir -p deploy
+          cp -r client/* deploy/
+          API_BASE="${{ vars.API_BASE_URL }}"
+          API_BASE="${API_BASE%/}"
+          SUPABASE_URL="${{ vars.SUPABASE_URL }}"
+          SUPABASE_ANON_KEY="${{ vars.SUPABASE_ANON_KEY }}"
+          cat > deploy/config.js << EOF
+          // Inyectado en deploy (leodaniel-rgb/Avance-proyecto-PlusZone)
+          window.API_BASE = '${API_BASE}';
+          window.SUPABASE_URL = '${SUPABASE_URL}';
+          window.SUPABASE_ANON_KEY = '${SUPABASE_ANON_KEY}';
+          EOF
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
-      - name: Upload artifact (client)
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: client
+          path: deploy
 
       - name: Deploy to GitHub Pages
         id: deployment

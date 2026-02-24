@@ -8,19 +8,12 @@ Endpoints principales:
 - GET /api/profiles -> obtener perfiles visibles (solo usuarios verificados)
 - POST /api/profiles -> { user_id, name, role } crear perfil para usuario
 
-Instalación local:
-1. cd server
-2. cp .env.example .env y configurar credenciales de MySQL y SMTP
-   - Asegúrate de que `DB_NAME` coincida con `pluszone` o ajusta `database/Pluszone.sql` según corresponda.
-3. npm install
+La **página web** de la app está en GitHub Pages. El backend (`server/`) debe desplegarse en un host (Render, Railway, etc.) y la variable **API_BASE_URL** configurarse en el repositorio. Ver `docs/DEPLOYMENT.md`.
 
-Migración / Crear base de datos y seeds:
-- Opción rápida (recomendado):
-  - Ejecuta `npm run migrate` desde el directorio `server` (ejecuta `init_db.js` que crea la base de datos, tablas y seeds). 
-  - Si usas Windows PowerShell: `npm run migrate` funciona igual.
-- Opción alternativa: abrir `database/Pluszone.sql` en MySQL Workbench y ejecutarlo manualmente.
-
-4. npm run dev (o npm start)
+Para desplegar este backend:
+1. En el host, configura **DATABASE_URL** (Supabase), **EMAIL_*** (SMTP) y **PORT**.
+2. Comando de build/start: `npm install && npm run migrate && npm start`.
+3. En el repo GitHub: **Settings → Variables → API_BASE_URL** = URL del backend (sin barra final).
 
 Notas:
 - Usa nodemailer para enviar el código de verificación

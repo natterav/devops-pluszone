@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -230,6 +231,83 @@ function generateCode() {
 
 // Health
 app.get('/api/ping', (req, res) => res.json({ ok: true }));
+
+// Sesión desde Supabase Auth (JWT). Crea/sincroniza usuario en nuestra DB y devuelve nuestro user.
+// El frontend usa Supabase Auth para registro/login; Supabase envía el correo de verificación (sin SMTP).
+app.post('/api/auth/session', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Token requerido' });
+
+  const secret = (process.env.SUPABASE_JWT_SECRET || '').trim();
+  if (!secret) return res.status(500).json({ error: 'SUPABASE_JWT_SECRET no configurado' });
+
+  let payload;
+  try {
+    payload = jwt.verify(token, secret);
+  } catch (err) {
+    return res.status(401).json({ error: 'Token inválido o expirado' });
+  }
+
+  const email = payload.email;
+  if (!email || !email.toLowerCase().endsWith('@tecmilenio.mx')) {
+    return res.status(403).json({ error: 'Solo se permiten correos @tecmilenio.mx' });
+  }
+
+  const metadata = payload.user_metadata || {};
+  const name = metadata.full_name || metadata.name || (email.split('@')[0] || 'Usuario');
+  const userType = metadata.user_type || 'employee';
+
+  try {
+    const { rows: existing } = await pool.query('SELECT id, email, name, user_type, image_url, description FROM users WHERE email = $1', [email]);
+    if (existing.length > 0) {
+      const u = existing[0];
+      await pool.query('UPDATE users SET is_active = true, updated_at = NOW() WHERE id = $1', [u.id]);
+      return res.json({
+        ok: true,
+        user: {
+          id: u.id,
+          email: u.email,
+          name: u.name,
+          type: u.user_type,
+          imageUrl: u.image_url || null,
+          description: u.description || ''
+        }
+      });
+    }
+
+    const result = await pool.query(
+      'INSERT INTO users (email, password_hash, name, user_type, image_url, description, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
+      [email, '', name, userType, null, null, true]
+    );
+    const userId = result.rows[0].id;
+    await pool.query(
+      'INSERT INTO profiles (user_id, name, description, detailed_description, tech_stack, salary, image_url, role) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+      [userId, name, '', '', JSON.stringify([]), '', null, userType === 'company' ? 'job' : 'candidate']
+    );
+
+    try {
+      const { rows: profiles } = await pool.query('SELECT p.* FROM profiles p WHERE p.user_id = $1 LIMIT 1', [userId]);
+      const profile = profiles && profiles[0] ? profiles[0] : null;
+      io.emit('user_verified', { user: { id: userId, email }, profile });
+    } catch (e) {}
+
+    return res.json({
+      ok: true,
+      user: {
+        id: userId,
+        email,
+        name,
+        type: userType,
+        imageUrl: null,
+        description: ''
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error interno' });
+  }
+});
 
 // Register
 app.post('/api/auth/register', async (req, res) => {

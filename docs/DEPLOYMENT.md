@@ -1,55 +1,47 @@
-Errores detectados y cómo resolverlos
+# Despliegue - PlusZone (Avance-proyecto-PlusZone)
 
-Resumen de errores encontrados al arrancar localmente:
+Repositorio: **leodaniel-rgb/Avance-proyecto-PlusZone**.  
+URL de la app: **https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**
 
-1) Ejecutar desde la carpeta equivocada
-   - Síntoma: `npm run dev` en C:\Users\...\Full-Stack-Project--main fallaba con "Could not read package.json".
-   - Causa: el proyecto tiene una estructura anidada y el `package.json` del servidor está dentro de `server/`.
-   - Solución: usar el script raíz (`npm run server:dev`) o ejecutar los comandos dentro de la carpeta `Full-Stack-Project--main/server` (ej. `cd Full-Stack-Project--main/server && npm install && npm run dev`).
+La aplicación está pensada para usarse entrando **solo al enlace de GitHub Pages**. El frontend se despliega automáticamente; el backend debe desplegarse aparte y configurarse con variables del repositorio.
 
-2) Migración / tablas faltantes
-   - Síntoma: la aplicación no encuentra la tabla `users` y antes no existía una orden clara para ejecutar la migración.
-   - Causa: la base de datos no tenía el esquema; la migración existía como `server/init_db.js` pero no se ejecutaba automáticamente o no había una forma controlada de ejecutarla.
-   - Solución: configuré la migración automática al arranque del servidor y añadí la variable de entorno `AUTO_MIGRATE` para controlar su ejecución. Si `AUTO_MIGRATE=false`, el servidor no ejecutará la migración y fallará con un mensaje claro.
+---
 
-3) Dep. de desarrollo (nodemon)
-   - Síntoma: `nodemon` no se encontraba al ejecutar `npm run dev` desde un directorio incorrecto.
-   - Solución: instalar dependencias en `server` con `npm --prefix Full-Stack-Project--main/server install` o ejecutar los scripts raíz (`npm run install-server`). Para producción use `npm run server:start` (no requiere `nodemon`).
+## Hacer funcional la página web (pasos necesarios)
 
-Cómo ejecutar la app localmente (paso a paso)
+### 1. Habilitar GitHub Pages
 
-Requisitos:
-- Node.js v16+ y npm
-- Base de datos **Supabase (PostgreSQL)**. Obtén la URI en: Supabase → Project Settings → Database → Connection string → Direct connection.
-- Archivo `.env` en `server/` (copiar `.env.example`) con las variables:
-  - **DATABASE_URL** (URI de conexión directa a Supabase, ej: `postgresql://postgres:[PASSWORD]@db.xxxx.supabase.co:5432/postgres`)
-  - EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS, EMAIL_SECURE
-  - AUTO_MIGRATE (opcional, default=true)
-- Una vez creado el proyecto en Supabase, ejecuta el esquema `database/pluszone_supabase.sql` en el SQL Editor de Supabase (o deja que `npm run migrate` lo aplique si tienes DATABASE_URL en .env).
+- Repositorio **Avance-proyecto-PlusZone** → **Settings** → **Pages**.
+- **Source:** **GitHub Actions**.
+- Con cada push a `main`, el workflow desplegará el frontend. URL: **https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**
 
-Comandos útiles desde la raíz del repositorio (carpeta que contiene `Full-Stack-Project--main`):
+### 2. Desplegar el backend (API)
 
-1. Instalar dependencias del servidor:
-   npm run install-server
+Despliega la carpeta `server/` en un servicio con Node.js (Render, Railway, Vercel con servidor, etc.):
 
-2. Ejecutar migración manualmente (si prefieres control manual):
-   npm run migrate
+- Variables de entorno: **DATABASE_URL** (Supabase), **SUPABASE_URL**, **SUPABASE_ANON_KEY**, **SUPABASE_JWT_SECRET** (ver `server/.env.example`). Opcional: **EMAIL_*** si usas flujo legacy con código 7 dígitos.
+- Comando de inicio: `npm install && npm run migrate && npm start`.
+- Anota la URL pública del backend (ej. `https://pluszone-api.onrender.com`), **sin barra final**.
 
-Nota importante sobre `.env` y caracteres inesperados:
-- Asegúrate de copiar `server/.env.example` a `server/.env` y **no** dejar espacios en blanco antes o después de los valores. Por ejemplo, evita `DB_PASSWORD= secret` (espacio antes) — usa `DB_PASSWORD=secret`.
-- El servidor ahora aplica `.trim()` internamente a las variables DB críticas (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT), pero es buena práctica revisar manualmente el `.env` para evitar problemas de autenticación.
-3. Ejecutar en modo desarrollo (con hot reload si `nodemon` instalado):
-   npm run server:dev
+### 3. Configurar Supabase (verificación de correo sin SMTP)
 
-4. Ejecutar en producción / sin hot reload:
-   npm start
+- En **Supabase** → **Authentication** → **Providers** → **Email**: activa **Confirm email**.
+- En **Authentication** → **URL Configuration** → **Redirect URLs**, añade:  
+  `https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**`  
+  (Supabase redirige aquí tras confirmar el correo.)
 
-Nota: también puedes trabajar directamente dentro de `Full-Stack-Project--main/server`:
-- cd Full-Stack-Project--main/server
-- npm install
-- npm run dev (desarrollo) o npm run migrate
+### 4. Variables del repositorio (GitHub Actions)
 
-Despliegue a un host (resumen, opciones comunes)
+- Repositorio → **Settings** → **Secrets and variables** → **Actions** → **Variables**.
+- Crea:
+  - **`API_BASE_URL`**: URL del backend (sin barra final).
+  - **`SUPABASE_URL`**: URL del proyecto (ej. `https://xxxx.supabase.co`).
+  - **`SUPABASE_ANON_KEY`**: clave anon/public del proyecto (API).
+- Haz un push a `main` o ejecuta el workflow "Deploy to GitHub Pages". El frontend usará estas variables y la página quedará funcional (registro con correo @tecmilenio.mx, confirmación por enlace enviado por Supabase, login y perfiles).
+
+---
+
+## Despliegue del backend (resumen por tipo de host)
 
 Opción A — VPS (Linux) (ej. DigitalOcean, AWS EC2)
 1. Crear servidor con Node.js. La base de datos es Supabase (en la nube); no hace falta instalar MySQL.
@@ -66,11 +58,7 @@ Opción B — Platform-as-a-Service (Render / Heroku / Railway)
 3. En Deploy script, ejecutar `npm run install-server` y `npm run migrate` (desde `server/`) si necesitas aplicar el esquema.
 4. Asegura que la app escuche en el puerto indicado por la plataforma (PORT).
 
-Opción C — GitHub Pages (frontend) + Backend en Render/Railway
-1. **Backend**: Despliega el servidor (`server/`) en Render, Railway o similar. Configura DATABASE_URL (Supabase) y variables de email. Anota la URL del backend (ej: `https://pluszone-api.onrender.com`).
-2. **Frontend en GitHub Pages**: En el repo, ve a Settings → Pages → Source: **GitHub Actions**. El workflow `.github/workflows/deploy-pages.yml` despliega la carpeta `client/` en cada push a `main`.
-3. **Configurar API en el frontend**: Edita `client/config.js` y asigna la URL de tu backend: `window.API_BASE = 'https://tu-backend.onrender.com';` (sin barra final). Haz commit y push para que el despliegue use esa URL.
-4. La app en GitHub Pages quedará en `https://<usuario>.github.io/<repo>/` y las peticiones irán a tu backend.
+La **variable `API_BASE_URL`** (paso 3 arriba) es la que usa el workflow para inyectar la URL del backend en el frontend desplegado. No hace falta editar `client/config.js` a mano para producción.
 
 Pruebas E2E sugeridas
 - Usar Mailtrap para pruebas de email (sandbox) y un script con Playwright para:
@@ -93,9 +81,11 @@ Recomendación específica para tu caso
 - Verifica el valor de `EMAIL_FROM` en `server/.env` (corrige `outlock.com` a la variante correcta o usa una dirección verificada por TurboSMTP). Después reinicia el servidor. Si después de eso sigues con `451 DNS temporary failure`, activa `EMAIL_API_ENABLED=true` (si tu cuenta soporta API) y prueba envío vía API antes de intentar más cambios o contactar soporte de TurboSMTP con el mensaje de error.
 
 Soporte y troubleshooting
-- Si ves error de conexión a la base de datos, revisa **DATABASE_URL** en `server/.env` (Supabase → Database → Connection string → Direct connection). Asegúrate de reemplazar `[YOUR-PASSWORD]` por la contraseña real.
-- Si el servidor no encuentra `nodemon`, instala dev deps con `npm run install-server` o ejecuta con `npm run server:start`.
-- Revisar logs (pm2 logs o la salida de nodemon) y revisar `server/init_db.js` si la migración falla. El esquema está en `database/pluszone_supabase.sql` (PostgreSQL para Supabase).
+- Si ves error de conexión a la base de datos, revisa **DATABASE_URL** (Supabase → Database → Connection string → Direct connection). Reemplaza `[YOUR-PASSWORD]` por la contraseña real.
+- Revisa los logs del backend desplegado y `server/init_db.js` si la migración falla. Esquema en `supabase/migrations/` o `database/pluszone_supabase.sql`.
 
 ---
-Versión generada: 2026-02-03
+
+## Desarrollo local (opcional)
+
+Si quieres probar backend y frontend en tu máquina: en `server/` crea `.env` con DATABASE_URL y SMTP, ejecuta `npm install`, `npm run migrate`, `npm run dev` y abre `http://localhost:4000`. La app servida por Express usará la API en el mismo origen.

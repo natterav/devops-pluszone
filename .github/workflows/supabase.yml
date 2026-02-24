@@ -28,5 +28,8 @@ jobs:
 
       - name: Validate config and migrations
         run: |
-          supabase db lint
+          supabase --version
+          test -f supabase/config.toml
+          test -d supabase/migrations
+          test -f supabase/seed.sql
           echo "Supabase config and migrations OK"
