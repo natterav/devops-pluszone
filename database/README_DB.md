@@ -123,7 +123,6 @@ Database.addMatch(userId, profileId);
 
 ## Próximos Pasos
 
-1. Cuando tengas backend, migra la estructura SQL a tu base de datos
 2. Implementa hash de contraseñas (bcrypt, argon2, etc.)
 3. Agrega autenticación con tokens (JWT)
 4. Implementa validación más robusta
