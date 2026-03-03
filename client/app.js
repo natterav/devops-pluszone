@@ -2116,11 +2116,11 @@ function renderMatches() {
                     <div class="match-card-actions">
                         <button class="message-button" onclick="openChat('${profile.id}')" title="Enviar mensaje">
                             <span class="message-icon">💬</span>
-                            <span class="message-text">Mensaje</span>
+                            <span class="message-text">Contactame</span>
                         </button>
                         <button class="view-profile-button" onclick="viewMatchProfile('${profile.id}')" title="Ver detalles">
                             <span class="view-icon" id="view-icon-${profile.id}">▼</span>
-                            <span class="view-text">Ver Detalles</span>
+                            <span class="view-text">Ver Información</span>
                         </button>
                     </div>
                 </div>

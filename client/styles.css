@@ -1406,7 +1406,6 @@ body {
 .match-card-main {
     display: flex;
     flex-direction: column;
-    height: 100%;
 }
 
 /* DESKTOP: cuando la card está expandida (Ver detalles), layout row: resumen izq | panel detalles der.
@@ -1447,6 +1446,7 @@ body {
 
 .match-card-content {
     padding: 1.5rem;
+    padding-bottom: 1.75rem;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -1463,7 +1463,6 @@ body {
     color: var(--medium-gray);
     margin-bottom: 1rem;
     line-height: 1.5;
-    flex: 1;
 }
 
 .match-card-attrs {
@@ -1563,6 +1562,7 @@ body {
 .match-profile-details.match-details-visible,
 .match-profile-details[style*="display: block"] {
     padding: 1.5rem;
+    padding-bottom: 2rem;
     display: block !important;
 }
 
@@ -1609,6 +1609,7 @@ body {
 
 .match-details-tech {
     margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
 }
 
 .match-details-tech .tech-stack-title {
@@ -1624,17 +1625,12 @@ body {
     gap: 0.5rem;
 }
 
-/* MÓVIL (≤768px): layout VERTICAL — tarjeta arriba, detalles abajo */
+/* MÓVIL (≤768px): layout VERTICAL — tarjeta arriba, detalles abajo; botones con texto visible */
 @media (max-width: 768px) {
-    .message-text,
-    .view-text {
-        display: none;
-    }
-    
     .message-button,
     .view-profile-button {
-        padding: 0.75rem;
-        min-width: 48px;
+        padding: 0.75rem 1rem;
+        min-width: 0;
     }
     
     .match-card.details-expanded {
@@ -1664,7 +1660,7 @@ body {
     
     .match-profile-details.match-details-visible,
     .match-profile-details[style*="display: block"] {
-        padding: 1rem !important;
+        padding: 1rem 1rem 1.75rem 1rem !important;
     }
 }
 
@@ -2450,7 +2446,6 @@ body {
     }
     
     .feed-main {
-        padding: 1rem;
     }
     
     .cards-stack {
@@ -2537,6 +2532,7 @@ body {
     }
     .matches-container .matches-grid .match-profile-details .match-details-content {
         padding: 0;
+        padding-bottom: 1rem;
     }
     .matches-container .matches-grid .match-profile-details .match-details-title {
         margin-bottom: 0.5rem;
@@ -2555,6 +2551,9 @@ body {
     }
     .matches-container .matches-grid .match-profile-details .match-details-tech .tech-stack-title {
         margin-bottom: 0.5rem;
+    }
+    .matches-container .matches-grid .match-profile-details .match-details-tech {
+        padding-bottom: 0.5rem;
     }
 }
 
