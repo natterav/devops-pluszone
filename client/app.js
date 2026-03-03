@@ -2,7 +2,8 @@
 const API_BASE = (typeof window !== 'undefined' && window.API_BASE) || '';
 const SUPABASE_URL = (typeof window !== 'undefined' && window.SUPABASE_URL) || '';
 const SUPABASE_ANON_KEY = (typeof window !== 'undefined' && window.SUPABASE_ANON_KEY) || '';
-const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY && typeof window.supabase !== 'undefined')
+// Cliente con nombre distinto para no chocar con la variable global que puede crear el CDN de Supabase
+const supabaseClient = (SUPABASE_URL && SUPABASE_ANON_KEY && typeof window.supabase !== 'undefined')
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
@@ -700,9 +701,9 @@ async function initLoadingScreen() {
     loadingScreen.style.display = 'none';
 
     // Restaurar sesión Supabase si existe (p. ej. usuario volvió tras confirmar correo)
-    if (supabase && API_BASE) {
+    if (supabaseClient && API_BASE) {
         try {
-            const { data } = await supabase.auth.getSession();
+            const { data } = await supabaseClient.auth.getSession();
             if (data?.session?.access_token) {
                 const resp = await fetch(API_BASE + '/api/auth/session', {
                     method: 'POST',
@@ -772,9 +773,9 @@ async function handleLogin(e) {
     clearAuthErrors();
 
     // 1) Supabase Auth (correo lo envía Supabase, sin SMTP)
-    if (supabase && API_BASE) {
+    if (supabaseClient && API_BASE) {
         try {
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (!error && data.session) {
                 const resp = await fetch(API_BASE + '/api/auth/session', {
                     method: 'POST',
@@ -968,6 +969,7 @@ async function handleRegister(e) {
     const name = document.getElementById('registerName').value.trim();
     const email = document.getElementById('registerEmail').value.trim();
     const password = document.getElementById('registerPassword').value;
+    const passwordConfirm = document.getElementById('registerPasswordConfirm') && document.getElementById('registerPasswordConfirm').value;
     const userType = document.querySelector('input[name="registerUserType"]:checked').value;
 
     // Validar campos
@@ -978,6 +980,11 @@ async function handleRegister(e) {
 
     if (password.length < 6) {
         showAuthError('registerForm', 'La contraseña debe tener al menos 6 caracteres');
+        return;
+    }
+
+    if (password !== passwordConfirm) {
+        showAuthError('registerForm', 'Las contraseñas no coinciden. Repite la misma contraseña.');
         return;
     }
 
@@ -996,10 +1003,10 @@ async function handleRegister(e) {
     clearAuthErrors();
 
     // 1) Supabase Auth (Supabase envía el correo de verificación, sin SMTP ni API externa)
-    if (supabase && API_BASE) {
+    if (supabaseClient && API_BASE) {
         try {
             const redirectTo = (typeof window !== 'undefined' && window.location.origin) ? window.location.origin + (window.location.pathname || '/') : undefined;
-            const { data, error } = await supabase.auth.signUp({
+            const { data, error } = await supabaseClient.auth.signUp({
                 email,
                 password,
                 options: {
@@ -1042,50 +1049,30 @@ async function handleRegister(e) {
         console.error(err);
     }
 
-    // Modo demo: Registro sin base de datos (para diseño)
-    state.currentUser = {
-        id: 'demo-' + Date.now(),
-        email: email,
-        name: name,
-        type: userType,
-        imageUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&h=400&fit=crop',
-        description: userType === 'company' 
-            ? 'Empresa innovadora en busca de talento profesional para crecer juntos' 
-            : 'Profesional apasionado buscando nuevas oportunidades de crecimiento',
-        techStack: userType === 'company' ? [] : ['React', 'Node.js', 'TypeScript', 'PostgreSQL'],
-        // Campos de empresa
-        companyName: userType === 'company' ? name + ' Solutions' : undefined,
-        companySize: userType === 'company' ? '11-50' : undefined,
-        industry: userType === 'company' ? 'Tecnología' : undefined,
-        companyLocation: userType === 'company' ? 'Madrid, España' : undefined,
-        // Campos de empleado
-        experience: userType === 'employee' ? '3-5 años' : undefined,
-        availability: userType === 'employee' ? 'Inmediata' : undefined,
-        preferredLocation: userType === 'employee' ? 'Remoto' : undefined,
-        salaryExpected: userType === 'employee' ? '$80,000 - $120,000' : undefined
-    };
-
-    // Mostrar mensaje de éxito
-    showAuthSuccess('registerForm', '¡Cuenta creada exitosamente! Redirigiendo...');
-
-    // Esperar un momento y luego mostrar la aplicación
-    setTimeout(() => {
-        const authScreen = document.getElementById('authScreen');
-        const app = document.getElementById('app');
-
-        if (authScreen) {
-            authScreen.style.display = 'none';
+    // Sin backend: guardar en base de datos local para que el login las encuentre después
+    if (typeof Database !== 'undefined' && Database && Database.createUser) {
+        if (Database.getUserByEmail(email)) {
+            showAuthError('registerForm', 'Este correo ya está registrado. Inicia sesión o usa otro correo.');
+            return;
         }
-
-        if (app) {
-            app.style.display = 'flex';
-            showMainApp();
-            addActivity('Cuenta creada exitosamente', 'Bienvenido a PlusZone, ' + name);
-        } else {
-            console.error('Error: No se encontró el elemento #app');
-            alert('Error al cargar la aplicación. Por favor, recarga la página.');
+        const created = Database.createUser({
+            name,
+            email,
+            password,
+            user_type: userType,
+            image_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&h=400&fit=crop',
+            description: userType === 'company'
+                ? 'Empresa innovadora en busca de talento profesional para crecer juntos'
+                : 'Profesional apasionado buscando nuevas oportunidades de crecimiento',
+            tech_stack: userType === 'company' ? [] : ['React', 'Node.js', 'TypeScript', 'PostgreSQL']
+        });
+        if (created) {
+            showAuthSuccess('registerForm', '¡Cuenta creada! Ya puedes iniciar sesión con tu correo y contraseña.');
+            return;
         }
-    }, 1500);
+    }
+
+    showAuthError('registerForm', 'No se pudo conectar al servidor. Comprueba tu conexión o que el backend esté en ejecución. Si usas solo frontend, la base local debería guardar tu cuenta.');
 }
 
 // Funciones auxiliares para mostrar mensajes
@@ -1222,6 +1209,15 @@ function showAuthSuccess(formId, message) {
     } else {
         form.appendChild(successDiv);
     }
+}
+
+function togglePasswordVisibility(inputId, buttonEl) {
+    const input = document.getElementById(inputId);
+    if (!input || !buttonEl) return;
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    buttonEl.setAttribute('aria-label', isPassword ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    buttonEl.textContent = isPassword ? '🙈' : '👁️';
 }
 
 function clearAuthErrors() {
@@ -2440,6 +2436,7 @@ window.editProfileImage = editProfileImage;
 window.saveProfile = saveProfile;
 window.flipCardBack = flipCardBack;
 window.clearAuthErrors = clearAuthErrors;
+window.togglePasswordVisibility = togglePasswordVisibility;
 window.showCreateJobModal = showCreateJobModal;
 window.closeCreateJobModal = closeCreateJobModal;
 window.handleCreateJob = handleCreateJob;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PlusZone - Tinder meets LinkedIn</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
     <!-- Pantalla de Carga -->
@@ -31,6 +31,7 @@
                 <p class="auth-subtitle">Conecta con talento profesional</p>
             </div>
 
+            <div class="auth-form-panel">
             <div class="auth-tabs">
                 <button class="auth-tab active" id="loginTab" onclick="switchAuthTab('login')">Iniciar Sesión</button>
                 <button class="auth-tab" id="registerTab" onclick="switchAuthTab('register')">Registrarse</button>
@@ -44,7 +45,10 @@
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">Contraseña</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••" required>
+                    <div class="password-wrap">
+                        <input type="password" id="loginPassword" placeholder="••••••••" required>
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" onclick="togglePasswordVisibility('loginPassword', this)">👁️</button>
+                    </div>
                 </div>
                 <div class="user-type-selector">
                     <label class="radio-label">
@@ -71,7 +75,17 @@
                 </div>
                 <div class="form-group">
                     <label for="registerPassword">Contraseña</label>
-                    <input type="password" id="registerPassword" placeholder="••••••••" required>
+                    <div class="password-wrap">
+                        <input type="password" id="registerPassword" placeholder="••••••••" required>
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" onclick="togglePasswordVisibility('registerPassword', this)">👁️</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="registerPasswordConfirm">Repetir contraseña</label>
+                    <div class="password-wrap">
+                        <input type="password" id="registerPasswordConfirm" placeholder="••••••••" required>
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" onclick="togglePasswordVisibility('registerPasswordConfirm', this)">👁️</button>
+                    </div>
                 </div>
                 <div class="user-type-selector">
                     <label class="radio-label">
@@ -85,6 +99,7 @@
                 </div>
                 <button type="submit" class="auth-button">Registrarse</button>
             </form>
+            </div>
         </div>
     </div>
 

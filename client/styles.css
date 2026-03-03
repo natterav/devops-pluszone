@@ -115,16 +115,22 @@ body {
     z-index: 9999;
     padding: 1rem;
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 .auth-container {
     background: var(--white);
-    border-radius: 24px;
-    padding: 3rem;
-    max-width: 450px;
+    border-radius: 20px;
+    padding: 2rem 1.5rem;
+    max-width: 420px;
     width: 100%;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    overflow-x: hidden;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     animation: slideUp 0.5s ease-out;
+    -webkit-overflow-scrolling: touch;
 }
 
 @keyframes slideUp {
@@ -140,39 +146,39 @@ body {
 
 .auth-header {
     text-align: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
 }
 
 .auth-header .logo {
-    width: 80px;
-    height: 80px;
-    margin: 0 auto 1rem;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 0.75rem;
 }
 
 .auth-title {
-    font-size: 2rem;
+    font-size: 1.5rem;
     font-weight: 900;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.35rem;
 }
 
 .auth-subtitle {
     color: var(--medium-gray);
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
 }
 
 .auth-tabs {
     display: flex;
-    gap: 1rem;
-    margin-bottom: 2rem;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
     border-bottom: 2px solid var(--light-gray);
 }
 
 .auth-tab {
     flex: 1;
-    padding: 1rem;
+    padding: 0.75rem 0.5rem;
     border: none;
     background: transparent;
-    font-size: 1rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: var(--medium-gray);
     cursor: pointer;
@@ -189,13 +195,15 @@ body {
 .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.125rem;
+    min-width: 0; /* responsive: no desbordar en flex */
 }
 
 .form-group {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    min-width: 0; /* permite que encaje en flex sin desbordar */
 }
 
 .form-group label {
@@ -207,18 +215,47 @@ body {
 .form-group input,
 .form-group textarea,
 .form-group select {
-    padding: 0.875rem 1rem;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    padding: 0.65rem 0.875rem;
     border: 2px solid var(--light-gray);
     border-radius: 8px;
     font-size: 1rem;
     font-family: inherit;
     transition: border-color 0.3s ease;
     background: var(--white);
-    width: 100%;
 }
 
 .form-group select {
     cursor: pointer;
+}
+
+.password-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+.password-wrap input {
+    padding-right: 2.75rem;
+}
+.password-wrap .toggle-password {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem 0.35rem;
+    font-size: 1.1rem;
+    line-height: 1;
+    opacity: 0.7;
+    border-radius: 4px;
+}
+.password-wrap .toggle-password:hover {
+    opacity: 1;
 }
 
 .form-group input:focus,
@@ -236,16 +273,18 @@ body {
 
 .user-type-selector {
     display: flex;
-    gap: 1rem;
-    margin: 0.5rem 0;
+    gap: 0.75rem;
+    margin: 0.35rem 0;
+    min-width: 0;
 }
 
 .radio-label {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 1rem;
+    padding: 0.75rem;
     border: 2px solid var(--light-gray);
     border-radius: 8px;
     cursor: pointer;
@@ -262,12 +301,12 @@ body {
 }
 
 .auth-button {
-    padding: 1rem 2rem;
+    padding: 0.75rem 1.5rem;
     background: linear-gradient(135deg, var(--electric-blue), #0052cc);
     color: var(--white);
     border: none;
-    border-radius: 12px;
-    font-size: 1rem;
+    border-radius: 10px;
+    font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -300,6 +339,67 @@ body {
 
 .auth-button:active {
     transform: translateY(0);
+}
+
+/* Auth: diseño desktop (mobile se mantiene igual); breakpoint 600px para verse con DevTools abierto */
+@media (min-width: 600px) {
+    .auth-screen {
+        padding: 2rem;
+    }
+
+    .auth-container {
+        max-width: 480px;
+        padding: 3.5rem 3rem;
+        border-radius: 28px;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25);
+    }
+
+    .auth-header .logo {
+        width: 88px;
+        height: 88px;
+        margin-bottom: 1.25rem;
+    }
+
+    .auth-title {
+        font-size: 2.25rem;
+    }
+
+    .auth-subtitle {
+        font-size: 1rem;
+    }
+
+    .auth-tabs {
+        margin-bottom: 2.25rem;
+    }
+
+    .auth-tab {
+        padding: 1rem 1.25rem;
+        font-size: 1.0625rem;
+    }
+
+    .auth-form {
+        gap: 1.75rem;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        padding: 1rem 1.25rem;
+        font-size: 1rem;
+    }
+
+    .user-type-selector {
+        gap: 1.25rem;
+    }
+
+    .radio-label {
+        padding: 1.125rem 1rem;
+    }
+
+    .auth-button {
+        padding: 1.125rem 2rem;
+        font-size: 1.0625rem;
+    }
 }
 
 /* ===== APLICACIÓN PRINCIPAL ===== */
@@ -2319,4 +2419,131 @@ body {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+}
+
+/* ===== AUTH RESPONSIVE ===== */
+/* Tablet / ventana media: panel un poco más ancho, sigue vertical, tamaños contenidos */
+@media (min-width: 360px) and (max-width: 768px) {
+    body .auth-screen { padding: 1.25rem !important; }
+    body .auth-container {
+        max-width: 440px !important;
+        width: 100% !important;
+        max-height: calc(100vh - 2.5rem) !important;
+        overflow-y: auto !important;
+        padding: 2rem 1.75rem !important;
+        border-radius: 20px !important;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.25) !important;
+    }
+    body .auth-container .auth-header .logo {
+        width: 72px !important; height: 72px !important; margin-bottom: 0.75rem !important;
+    }
+    body .auth-container .auth-title { font-size: 1.625rem !important; }
+    body .auth-container .auth-subtitle { font-size: 0.875rem !important; }
+    body .auth-container .auth-tabs { margin-bottom: 1.25rem !important; }
+    body .auth-container .auth-tab { padding: 0.65rem 0.5rem !important; font-size: 0.9375rem !important; }
+    body .auth-container .auth-form { gap: 1.125rem !important; }
+    body .auth-container .form-group input,
+    body .auth-container .form-group textarea,
+    body .auth-container .form-group select {
+        padding: 0.65rem 0.875rem !important; font-size: 0.9375rem !important;
+    }
+    body .auth-container .user-type-selector { gap: 0.75rem !important; }
+    body .auth-container .radio-label { padding: 0.75rem !important; }
+    body .auth-container .auth-button { padding: 0.75rem 1.5rem !important; font-size: 0.9375rem !important; }
+}
+
+/* Desktop: layout horizontal (bienvenida izquierda, formulario derecha) */
+@media (min-width: 769px) {
+    body .auth-screen {
+        padding: 2rem !important;
+    }
+    body .auth-container {
+        display: flex !important;
+        flex-direction: row !important;
+        max-width: 880px !important;
+        width: 100% !important;
+        max-height: calc(100vh - 4rem) !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        border-radius: 20px !important;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3) !important;
+        overflow: hidden !important;
+    }
+    /* Columna izquierda: bienvenida (referencia imagen) */
+    body .auth-container .auth-header {
+        flex: 0 0 42% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        padding: 2rem 1.75rem !important;
+        margin: 0 !important;
+        text-align: center !important;
+        background: linear-gradient(160deg, #5a67d8 0%, #4c51bf 50%, #434190 100%) !important;
+        color: #fff !important;
+    }
+    body .auth-container .auth-header .logo {
+        width: 72px !important;
+        height: 72px !important;
+        margin: 0 auto 1rem !important;
+        background: rgba(255,255,255,0.2) !important;
+        color: #fff !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-weight: 800 !important;
+    }
+    body .auth-container .auth-header .auth-title {
+        font-size: 1.5rem !important;
+        color: #fff !important;
+        margin-bottom: 0.35rem !important;
+    }
+    body .auth-container .auth-header .auth-title .title-accent {
+        color: #e0e7ff !important;
+        -webkit-text-fill-color: #e0e7ff !important;
+        background: none !important;
+        background-clip: unset !important;
+    }
+    body .auth-container .auth-header .auth-subtitle {
+        color: rgba(255,255,255,0.9) !important;
+        font-size: 0.875rem !important;
+    }
+    /* Columna derecha: formulario (scroll interno para ver siempre el botón) */
+    body .auth-container .auth-form-panel {
+        flex: 1 1 0 !important;
+        min-height: 0 !important;
+        min-width: 0 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        padding: 2rem 1.75rem !important;
+        background: var(--white) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+    body .auth-container .auth-form-panel .auth-tabs {
+        margin-bottom: 1.25rem !important;
+    }
+    body .auth-container .auth-form-panel .auth-tab {
+        padding: 0.6rem 0.75rem !important;
+        font-size: 0.9375rem !important;
+    }
+    body .auth-container .auth-form-panel .auth-form {
+        gap: 1.125rem !important;
+    }
+    body .auth-container .auth-form-panel .form-group input,
+    body .auth-container .auth-form-panel .form-group textarea,
+    body .auth-container .auth-form-panel .form-group select {
+        padding: 0.65rem 0.875rem !important;
+        font-size: 0.9375rem !important;
+    }
+    body .auth-container .auth-form-panel .user-type-selector {
+        gap: 0.75rem !important;
+    }
+    body .auth-container .auth-form-panel .radio-label {
+        padding: 0.75rem !important;
+    }
+    body .auth-container .auth-form-panel .auth-button {
+        padding: 0.75rem 1.5rem !important;
+        font-size: 0.9375rem !important;
+    }
 }
