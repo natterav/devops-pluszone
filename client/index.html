@@ -129,7 +129,7 @@
                             <span class="nav-text">Mis Matches</span>
                         </button>
                         <button class="nav-item" onclick="showSection('messages')">
-                            <span class="nav-icon"></span>
+                            <span class="nav-icon">💬</span>
                             <span class="nav-text">Mensajes</span>
                         </button>
                         <button class="nav-item" onclick="showSection('dashboard')">
@@ -152,7 +152,7 @@
                             <span class="nav-text">Mis Ofertas</span>
                         </button>
                         <button class="nav-item" onclick="showSection('messages')">
-                            <span class="nav-icon"></span>
+                            <span class="nav-icon">💬</span>
                             <span class="nav-text">Mensajes</span>
                         </button>
                         <button class="nav-item" onclick="showSection('dashboard')">
@@ -230,6 +230,11 @@
                             <div class="cards-stack" id="cardsStack">
                                 <!-- Las tarjetas se generarán dinámicamente -->
                             </div>
+                            <!-- Mensaje vacío centrado entre los dos botones (mismo hueco que las cards) -->
+                            <div class="swipe-container-empty" id="emptyState" style="display: none;">
+                                <h2>¡No hay más perfiles disponibles!</h2>
+                                <p>Has visto todas las ofertas disponibles. Vuelve más tarde para ver nuevas oportunidades.</p>
+                            </div>
                             <button class="action-button action-pass" id="passButton" aria-label="Pasar">
                                 ✕
                             </button>
@@ -237,11 +242,6 @@
                         <!-- Contenedor para paneles de detalles -->
                         <div class="card-details-container" id="cardDetailsContainer">
                             <!-- Los paneles se generarán dinámicamente -->
-                        </div>
-
-                        <div class="swipe-container-empty" id="emptyState" style="display: none;">
-                            <h2>¡No hay más perfiles disponibles!</h2>
-                            <p>Vuelve más tarde para ver nuevos candidatos y ofertas.</p>
                         </div>
                     </div>
                 </div>
@@ -623,6 +623,7 @@
             </div>
             <div class="modal-body">
                 <p id="verifyMessage">Se ha enviado un código de verificación de 7 dígitos a tu correo. Ingresa el código a continuación.</p>
+                <div id="verifyDevCode" class="verify-dev-code" style="display: none;" role="status"></div>
                 <div class="form-group">
                     <label for="verifyCodeInput">Código de verificación</label>
                     <input type="text" id="verifyCodeInput" placeholder="1234567" maxlength="7" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
@@ -636,6 +637,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Notificación in-app (toast) -->
+    <div id="appToast" class="app-toast" role="status" aria-live="polite"></div>
 
     <!-- Socket.IO y Supabase (Auth sin SMTP) -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>

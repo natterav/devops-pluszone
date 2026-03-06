@@ -620,6 +620,20 @@ const mockCompanies = [
     }
 ];
 
+// Notificación in-app (toast) — reemplaza alert para mensajes de éxito
+let toastTimeout = null;
+function showToast(message, type = 'success') {
+    const el = document.getElementById('appToast');
+    if (!el) return;
+    el.textContent = message;
+    el.className = 'app-toast show ' + (type === 'success' ? 'success' : '');
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => {
+        el.classList.remove('show');
+        toastTimeout = null;
+    }, 3500);
+}
+
 // Estado global
 const state = {
     allProfiles: [...mockProfiles], // Todos los perfiles disponibles
@@ -634,6 +648,22 @@ const state = {
     companyJobs: [],
     selectedCategory: 'Todas' // Categoría seleccionada para filtrar
 };
+
+// Cargar ofertas de la empresa desde la DB (para "Mis Ofertas" y que la empresa vea sus datos)
+function loadCompanyJobsFromDatabase() {
+    if (typeof Database === 'undefined' || !state.currentUser || state.currentUser.type !== 'company') return;
+    const jobProfiles = Database.getJobProfilesByUserId(state.currentUser.id);
+    state.companyJobs = jobProfiles.map(p => ({
+        id: p.id,
+        title: p.name,
+        description: p.detailed_description || p.description || '',
+        salary: p.salary || '',
+        location: p.location || 'Remoto',
+        techStack: Array.isArray(p.tech_stack) ? p.tech_stack : [],
+        active: true,
+        category: p.category
+    }));
+}
 
 // Cargar perfiles desde la base de datos para que Discover y Matches muestren datos reales
 function loadAllProfilesFromDatabase() {
@@ -651,6 +681,9 @@ function loadAllProfilesFromDatabase() {
             name: p.name,
             description: p.description || '',
             detailedDescription: p.detailed_description || p.description || '',
+            tagline: p.tagline || '',
+            company_description: p.company_description || '',
+            about_me: p.about_me || '',
             techStack: Array.isArray(p.tech_stack) ? p.tech_stack : [],
             imageUrl: p.image_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&h=400&fit=crop',
             role: p.role,
@@ -856,8 +889,9 @@ async function handleLogin(e) {
         }
     }
 
-    // 2) API legacy (código 7 dígitos)
-    try {
+    // 2) API legacy (solo si hay URL válida y no estamos en file:// para evitar CORS)
+    const canUseApi = API_BASE && (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) && window.location.protocol !== 'file:';
+    if (canUseApi) try {
         const resp = await fetch(API_BASE + '/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -964,7 +998,10 @@ async function handleLogin(e) {
         };
 
         // Usar perfiles reales de la base de datos en Discover y Matches
-        if (typeof Database !== 'undefined') loadAllProfilesFromDatabase();
+        if (typeof Database !== 'undefined') {
+            loadAllProfilesFromDatabase();
+            if (state.currentUser.type === 'company') loadCompanyJobsFromDatabase();
+        }
 
         const authScreen = document.getElementById('authScreen');
         const app = document.getElementById('app');
@@ -1096,9 +1133,9 @@ async function handleRegister(e) {
             showAuthError('registerForm', data.error || 'Error en el registro');
             return;
         }
-        showAuthSuccess('registerForm', 'Cuenta creada. Se ha enviado un código de verificación a tu correo.');
-        window._pendingVerification = { email, password, name };
-        openVerifyModal(email, 'Se ha enviado un código de verificación a ' + email);
+        showAuthSuccess('registerForm', data.message || data.warning || 'Cuenta creada. Revisa tu correo o el código de desarrollo.');
+        window._pendingVerification = { email, password, name, devCode: data.devCode || null };
+        openVerifyModal(email, data.devCode ? 'No se pudo enviar el correo. Usa el código de desarrollo abajo.' : (data.message || 'Se ha enviado un código de verificación a ' + email), data.devCode);
         return;
     } catch (err) {
         console.error(err);
@@ -1131,8 +1168,13 @@ async function handleRegister(e) {
 }
 
 // Funciones auxiliares para mostrar mensajes
-// Obtener perfiles desde el servidor (si existe API)
+// Obtener perfiles desde el servidor (solo si hay API válida; desde file:// usar DB local)
 async function fetchProfiles() {
+    const canUseApi = API_BASE && (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) && window.location.protocol !== 'file:';
+    if (!canUseApi) {
+        if (typeof Database !== 'undefined') loadAllProfilesFromDatabase();
+        return;
+    }
     try {
         const resp = await fetch(API_BASE + '/api/profiles');
         const data = await resp.json();
@@ -1175,14 +1217,16 @@ async function fetchProfiles() {
         }
     } catch (err) {
         console.warn('fetchProfiles error:', err);
+        if (typeof Database !== 'undefined') loadAllProfilesFromDatabase();
     }
 }
 
-// Conexión Socket.IO (notificaciones en tiempo real)
+// Conexión Socket.IO solo cuando hay API (evita errores en file://)
 (function setupSocket() {
+    const canUseApi = API_BASE && (API_BASE.startsWith('http://') || API_BASE.startsWith('https://')) && window.location.protocol !== 'file:';
+    if (!canUseApi || typeof io !== 'function') return;
     try {
-        if (typeof io === 'function') {
-            const socket = API_BASE ? io(API_BASE, { path: '/socket.io' }) : io();
+        const socket = io(API_BASE, { path: '/socket.io' });
             window.socket = socket;
 
             socket.on('connect', () => {
@@ -1214,9 +1258,6 @@ async function fetchProfiles() {
             socket.on('disconnect', () => {
                 console.log('Socket.IO desconectado');
             });
-        } else {
-            console.warn('Socket.IO client no disponible en esta página.');
-        }
     } catch (err) {
         console.warn('Error al inicializar Socket.IO:', err);
     }
@@ -1286,9 +1327,10 @@ function clearAuthErrors() {
 }
 
 // --- Modal de verificación y handlers ---
-function openVerifyModal(email, message) {
+function openVerifyModal(email, message, devCode) {
     const modal = document.getElementById('verifyModal');
     const msg = document.getElementById('verifyMessage');
+    const devCodeEl = document.getElementById('verifyDevCode');
     const input = document.getElementById('verifyCodeInput');
     const feedback = document.getElementById('verifyFeedback');
     const resendBtn = document.getElementById('resendCodeBtn');
@@ -1296,7 +1338,17 @@ function openVerifyModal(email, message) {
 
     if (!modal) return;
     if (msg) msg.textContent = message || 'Se ha enviado un código de verificación a tu correo. Ingresa el código a continuación.';
-    if (input) input.value = '';
+    if (devCodeEl) {
+        if (devCode) {
+            devCodeEl.textContent = 'Tu código (desarrollo): ' + devCode;
+            devCodeEl.style.display = 'block';
+            if (input) input.value = devCode;
+        } else {
+            devCodeEl.textContent = '';
+            devCodeEl.style.display = 'none';
+        }
+    }
+    if (input && !devCode) input.value = '';
     if (feedback) {
         feedback.textContent = '';
         feedback.style.color = '#333';
@@ -1305,7 +1357,6 @@ function openVerifyModal(email, message) {
     if (confirmBtn) confirmBtn.disabled = false;
 
     modal.style.display = 'flex';
-    // Save the email we're verifying on the modal element for convenience
     modal.dataset.verificationEmail = email;
 }
 
@@ -1442,8 +1493,14 @@ async function handleResendCode() {
             return;
         }
 
-        setVerifyFeedback('Código reenviado. Revisa tu correo.', false);
-        // Establecer cooldown de 30 segundos para evitar rapid re-sends
+        const devCodeEl = document.getElementById('verifyDevCode');
+        const codeInput = document.getElementById('verifyCodeInput');
+        if (data.devCode && devCodeEl) {
+            devCodeEl.textContent = 'Tu código (desarrollo): ' + data.devCode;
+            devCodeEl.style.display = 'block';
+            if (codeInput) codeInput.value = data.devCode;
+        }
+        setVerifyFeedback(data.devCode ? 'Código de desarrollo mostrado abajo.' : 'Código reenviado. Revisa tu correo.', false);
         _resendCooldown = Date.now() + 30 * 1000;
         setTimeout(() => {
             if (resendBtn) resendBtn.disabled = false;
@@ -1493,15 +1550,16 @@ function showMainApp() {
         if (typeof updateUserInfo === 'function') updateUserInfo();
         if (typeof loadProfile === 'function') loadProfile();
 
-        // Obtener perfiles desde la API si está disponible
+        // Obtener perfiles: API si hay URL válida; si no (p. ej. file://), usar DB local
         if (typeof fetchProfiles === 'function') {
             fetchProfiles().then(() => {
+                if (typeof filterProfilesByUserType === 'function') filterProfilesByUserType();
                 if (typeof renderCards === 'function') renderCards();
             }).catch(() => {
+                if (typeof Database !== 'undefined') loadAllProfilesFromDatabase();
+                if (typeof filterProfilesByUserType === 'function') filterProfilesByUserType();
                 if (typeof renderCards === 'function') renderCards();
             });
-
-    
         } else {
             if (typeof renderCards === 'function') renderCards();
         }
@@ -1698,21 +1756,22 @@ function saveProfile(e) {
             attachments: state.currentUser.attachments || []
         };
         Database.updateUser(state.currentUser.id, userUpdates);
-        // Sincronizar también el perfil público (el que ven otros en Discover / matches)
-        Database.updateProfileByUserId(state.currentUser.id, {
-            name: state.currentUser.name,
-            description: state.currentUser.description || '',
-            detailed_description: state.currentUser.detailedDescription || state.currentUser.description || '',
-            tech_stack: state.currentUser.techStack || [],
-            image_url: state.currentUser.imageUrl || ''
-        });
+        // Sincronizar perfil público solo para empleados (candidatos); para empresa no tocamos perfiles de ofertas
+        if (state.currentUser.type !== 'company') {
+            Database.updateProfileByUserId(state.currentUser.id, {
+                name: state.currentUser.name,
+                description: state.currentUser.description || '',
+                detailed_description: state.currentUser.detailedDescription || state.currentUser.description || '',
+                tech_stack: state.currentUser.techStack || [],
+                image_url: state.currentUser.imageUrl || ''
+            });
+        }
     }
     
     loadProfile();
     updateUserInfo();
     addActivity('Perfil actualizado', 'Tus cambios se han guardado correctamente');
-    
-    alert('Perfil actualizado exitosamente');
+    showToast('Perfil actualizado exitosamente');
 }
 
 function handleProfileImageFile(event) {
@@ -1856,18 +1915,17 @@ function createCardHTML(profile, isTop = false) {
                 </div>
                 <div class="card-content">
                     <h2 class="card-name">${profile.name}</h2>
-                    <p class="card-description">${profile.description}</p>
+                    ${profile.tagline ? `<p class="card-tagline">${profile.tagline}</p>` : ''}
+                    ${isJob ? `<p class="card-company-description">${profile.company_description || profile.detailedDescription || profile.description || ''}</p>` : `<p class="card-candidate-description">${profile.about_me || profile.description || ''}</p>`}
                     ${profile.salary ? `<p class="card-salary">💰 ${profile.salary}</p>` : ''}
                     ${additionalInfo}
                     <div class="card-tags">
-                        ${profile.techStack.slice(0, 4).map(tech => `<span class="tag">${tech}</span>`).join('')}
+                        ${(profile.techStack || []).slice(0, 4).map(tech => `<span class="tag">${tech}</span>`).join('')}
                     </div>
-                    ${isTop ? `
-                        <button class="card-expand-btn" onclick="event.stopPropagation(); toggleCardDetails('${profile.id}')" aria-label="Ver más detalles">
-                            <span class="expand-icon" id="icon-${profile.id}">▼</span>
-                            <span class="expand-text" id="text-${profile.id}">Ver más detalles</span>
-                        </button>
-                    ` : ''}
+                    <button class="card-expand-btn" onclick="event.stopPropagation(); toggleCardDetails('${profile.id}')" aria-label="Ver detalles de la oferta">
+                        <span class="expand-icon" id="icon-${profile.id}">▼</span>
+                        <span class="expand-text" id="text-${profile.id}">${isJob ? 'Ver detalles de la oferta' : 'Ver más detalles'}</span>
+                    </button>
                 </div>
             </div>
             <div class="swipe-stamp interested" style="display: none;">INTERESADO</div>
@@ -1879,12 +1937,39 @@ function createCardHTML(profile, isTop = false) {
 function createDetailsPanel(profile) {
     const isCandidate = profile.role === 'candidate';
     const isJob = profile.role === 'job';
-    
+    const techStack = profile.techStack && Array.isArray(profile.techStack) ? profile.techStack : [];
+    const jobExtras = isJob ? `
+                    <div class="card-details-section">
+                        <h4 class="card-details-subtitle">Requisitos</h4>
+                        <ul class="card-details-list">
+                            <li>Experiencia en las tecnologías indicadas (${techStack.slice(0, 3).join(', ') || 'ver descripción'})</li>
+                            <li>Trabajo en equipo y comunicación efectiva</li>
+                            <li>Disponibilidad ${profile.location === 'Remoto' ? 'para trabajo remoto' : profile.location === 'Híbrido' ? 'para modelo híbrido' : 'para trabajo presencial'}</li>
+                        </ul>
+                    </div>
+                    <div class="card-details-section">
+                        <h4 class="card-details-subtitle">Ofrecemos</h4>
+                        <ul class="card-details-list">
+                            <li>Salario competitivo según experiencia</li>
+                            <li>Ambiente de trabajo colaborativo</li>
+                            <li>Oportunidades de crecimiento</li>
+                        </ul>
+                    </div>
+                    ${profile.companyName ? `
+                    <div class="card-details-section">
+                        <h4 class="card-details-subtitle">Sobre la empresa</h4>
+                        <p class="card-details-description">${profile.companyName}${profile.industry ? ' — ' + profile.industry : ''}${profile.companySize ? '. ' + profile.companySize + ' empleados.' : ''} ${profile.detailedDescription || profile.description || ''}</p>
+                    </div>
+                    ` : ''}
+                ` : '';
     return `
         <div class="card-details-panel" id="details-${profile.id}" style="display: none;">
             <div class="card-details-content">
                 <h3 class="card-details-title">${isCandidate ? 'Acerca del Candidato' : 'Detalles de la Oferta'}</h3>
-                <p class="card-details-description">${profile.detailedDescription}</p>
+                ${profile.tagline ? `<p class="card-details-tagline">${profile.tagline}</p>` : ''}
+                ${isJob && profile.company_description ? `<p class="card-details-description card-details-company-block">${profile.company_description}</p>` : ''}
+                ${isCandidate && profile.about_me ? `<p class="card-details-description card-details-candidate-block">${profile.about_me}</p>` : ''}
+                <p class="card-details-description">${profile.detailedDescription || profile.description || ''}</p>
                 ${isCandidate ? `
                     <div class="card-details-info">
                         ${profile.experience ? `<p><strong>Experiencia:</strong> ${profile.experience}</p>` : ''}
@@ -1901,12 +1986,14 @@ function createDetailsPanel(profile) {
                         ${profile.industry ? `<p><strong>Industria:</strong> ${profile.industry}</p>` : ''}
                         ${profile.companySize ? `<p><strong>Tamaño de empresa:</strong> ${profile.companySize}</p>` : ''}
                         ${profile.category ? `<p><strong>Categoría:</strong> ${profile.category}</p>` : ''}
+                        ${profile.salary ? `<p><strong>💰 Rango salarial:</strong> ${profile.salary}</p>` : ''}
                     </div>
+                    ${jobExtras}
                 ` : ''}
                 <div class="card-details-tech">
                     <h4 class="tech-stack-title">${isCandidate ? 'Stack Tecnológico:' : 'Tecnologías Requeridas:'}</h4>
                     <div class="tech-stack-list">
-                        ${profile.techStack.map(tech => `<span class="tag">${tech}</span>`).join('')}
+                        ${techStack.map(tech => `<span class="tag">${tech}</span>`).join('')}
                     </div>
                 </div>
                 <button class="card-close-btn" onclick="toggleCardDetails('${profile.id}')">Cerrar</button>
@@ -1992,7 +2079,7 @@ function renderCards() {
     const emptyState = document.getElementById('emptyState');
     
     if (!state.profiles || state.profiles.length === 0) {
-        if (cardsStack) cardsStack.innerHTML = '';
+        if (cardsStack) { cardsStack.innerHTML = ''; cardsStack.style.display = 'none'; }
         if (emptyState) {
             emptyState.innerHTML = `
                 <h2>¡No hay perfiles disponibles!</h2>
@@ -2000,13 +2087,13 @@ function renderCards() {
                     ? 'No hay candidatos disponibles en este momento. Vuelve más tarde.' 
                     : 'No hay ofertas de trabajo disponibles en este momento. Vuelve más tarde.'}</p>
             `;
-            emptyState.style.display = 'block';
+            emptyState.style.display = 'flex';
         }
         return;
     }
     
     if (state.currentIndex >= state.profiles.length) {
-        if (cardsStack) cardsStack.innerHTML = '';
+        if (cardsStack) { cardsStack.innerHTML = ''; cardsStack.style.display = 'none'; }
         if (emptyState) {
             emptyState.innerHTML = `
                 <h2>¡No hay más perfiles disponibles!</h2>
@@ -2014,11 +2101,12 @@ function renderCards() {
                     ? 'Has visto todos los candidatos disponibles. Vuelve más tarde para ver nuevos perfiles.' 
                     : 'Has visto todas las ofertas disponibles. Vuelve más tarde para ver nuevas oportunidades.'}</p>
             `;
-            emptyState.style.display = 'block';
+            emptyState.style.display = 'flex';
         }
         return;
     }
     
+    if (cardsStack) cardsStack.style.display = '';
     if (emptyState) emptyState.style.display = 'none';
     
     const currentProfile = state.profiles[state.currentIndex];
@@ -2253,7 +2341,8 @@ function renderMatches() {
                 </div>
                 <div class="match-card-content">
                     <h3>${profile.name}</h3>
-                    <p class="match-card-description">${profile.description}</p>
+                    ${isJob && profile.tagline ? `<p class="match-card-tagline">${profile.tagline}</p>` : ''}
+                    <p class="match-card-description">${isJob ? (profile.company_description || profile.description || '') : profile.description}</p>
                     ${attrsLine ? `<p class="match-card-attrs">${attrsLine}</p>` : ''}
                     <div class="match-card-tags">
                         ${(profile.techStack || []).slice(0, 5).map(tech => `<span class="tag">${tech}</span>`).join('')}
@@ -2304,6 +2393,9 @@ function createMatchDetailsHTML(profile) {
     return `
         <div class="match-details-content">
             <h3 class="match-details-title">${isCandidate ? 'Información del Candidato' : 'Detalles de la Oferta'}</h3>
+            ${profile.tagline ? `<p class="match-details-tagline">${profile.tagline}</p>` : ''}
+            ${isJob && profile.company_description ? `<p class="match-details-description match-details-company-block">${profile.company_description}</p>` : ''}
+            ${isCandidate && profile.about_me ? `<p class="match-details-description match-details-candidate-block">${profile.about_me}</p>` : ''}
             <p class="match-details-description">${profile.detailedDescription || profile.description || ''}</p>
             ${isCandidate ? `
                 <div class="match-details-info">
@@ -2321,6 +2413,7 @@ function createMatchDetailsHTML(profile) {
                     ${profile.industry ? `<div class="detail-item"><strong>Industria:</strong> ${profile.industry}</div>` : ''}
                     ${profile.companySize ? `<div class="detail-item"><strong>Tamaño de empresa:</strong> ${profile.companySize}</div>` : ''}
                     ${profile.category ? `<div class="detail-item"><strong>Categoría:</strong> ${profile.category}</div>` : ''}
+                    ${profile.salary ? `<div class="detail-item"><strong>💰 Rango salarial:</strong> ${profile.salary}</div>` : ''}
                 </div>
             ` : ''}
             <div class="match-details-tech">
@@ -2528,53 +2621,68 @@ function handleCreateJob(e) {
     }
     
     const locationText = location === 'remote' ? 'Remoto' : location === 'hybrid' ? 'Híbrido' : 'Presencial';
+    const category = state.currentUser.industry === 'Salud' ? 'Salud' : (state.currentUser.industry || 'Tecnología');
+    
+    // Persistir en la base de datos si está disponible
+    let newJobId = 'job-' + Date.now();
+    if (typeof Database !== 'undefined' && Database.createJobProfile) {
+        const saved = Database.createJobProfile(state.currentUser.id, {
+            title: title,
+            name: title,
+            description: `${locationText} - ${state.currentUser.companyName || 'Empresa'}`,
+            detailed_description: description,
+            tagline: title,
+            company_description: state.currentUser.description || description,
+            tech_stack: techStack,
+            salary: salary,
+            location: locationText,
+            category: category
+        });
+        if (saved) newJobId = saved.id;
+    }
     
     const newJob = {
-        id: 'job-' + Date.now(),
+        id: newJobId,
         title: title,
         description: description,
         salary: salary,
         location: locationText,
         techStack: techStack,
         active: true,
+        category: category,
         createdAt: new Date().toISOString()
     };
     
     state.companyJobs.push(newJob);
     
-    // Agregar a todos los perfiles disponibles (para que aparezca en la lista de ofertas)
+    // Agregar a todos los perfiles para que empleados vean la oferta en Discover (también se persiste en DB y se carga al refrescar)
     const newJobProfile = {
-        id: newJob.id,
+        id: newJobId,
+        user_id: state.currentUser.id,
         name: title,
         description: `${locationText} - ${state.currentUser.companyName || 'Empresa'}`,
         detailedDescription: description,
+        tagline: title,
+        company_description: state.currentUser.description || description,
         techStack: techStack,
         salary: salary,
         location: locationText,
         companyName: state.currentUser.companyName || 'Mi Empresa',
         companySize: state.currentUser.companySize || '11-50 empleados',
         industry: state.currentUser.industry || 'Tecnología',
-        category: state.currentUser.industry === 'Salud' ? 'Médicos' : 
-                 (state.currentUser.industry === 'Manufactura' || state.currentUser.industry === 'Industrial') ? 'Industrial' : 
-                 'Informática',
+        category: category,
         imageUrl: state.currentUser.imageUrl || 'https://images.unsplash.com/photo-1556761175-b413da4baf72?w=400&h=400&fit=crop',
-        role: 'job',
-        userType: 'company',
-        companyId: state.currentUser.id
+        role: 'job'
     };
     
     state.allProfiles.push(newJobProfile);
-    
-    // Si el usuario actual es empleado, actualizar la lista de perfiles filtrados
-    if (state.currentUser.type === 'employee') {
-        filterProfilesByUserType();
-    }
+    filterProfilesByUserType(); // actualiza state.profiles por si hay empleado en otra pestaña o tras cambiar de cuenta
     
     closeCreateJobModal();
     renderJobs();
     addActivity('Nueva oferta creada', `Has creado la oferta: ${title}`);
     
-    alert('Oferta de trabajo creada exitosamente');
+    showToast('Oferta de trabajo creada exitosamente');
 }
 
 // ===== INICIALIZACIÓN =====
@@ -2600,6 +2708,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// Restablecer datos de ejemplo (empleados, ofertas, descripciones) desde la pantalla de login
+function resetDemoData() {
+    if (typeof Database === 'undefined') return;
+    if (!confirm('¿Restablecer datos de ejemplo? Se borrarán tus datos locales y se cargarán de nuevo los empleados y ofertas de ejemplo.')) return;
+    Database.reset();
+    location.reload();
+}
+window.resetDemoData = resetDemoData;
 
 // Funciones globales para HTML
 window.switchAuthTab = switchAuthTab;
