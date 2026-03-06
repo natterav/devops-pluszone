@@ -1135,10 +1135,12 @@ async function handleRegister(e) {
         }
         showAuthSuccess('registerForm', data.message || data.warning || 'Cuenta creada. Revisa tu correo o el código de desarrollo.');
         window._pendingVerification = { email, password, name, devCode: data.devCode || null };
-        openVerifyModal(email, data.devCode ? 'No se pudo enviar el correo. Usa el código de desarrollo abajo.' : (data.message || 'Se ha enviado un código de verificación a ' + email), data.devCode);
+        showAuthVerificationStep(email, data.devCode ? 'No se pudo enviar el correo. Usa el código de desarrollo que aparece abajo.' : ('Se ha enviado un código de 7 dígitos a ' + email + '. Revísalo en tu bandeja o usa el código de desarrollo si aparece abajo.'), data.devCode);
         return;
     } catch (err) {
         console.error(err);
+        showAuthError('registerForm', 'No se pudo conectar con el servidor. Para la demo con API, arranca el servidor (node server/index.js) y vuelve a intentar.');
+        return;
     }
 
     // Sin backend: guardar en base de datos local para que el login las encuentre después
@@ -1326,7 +1328,154 @@ function clearAuthErrors() {
     document.querySelectorAll('.auth-error, .auth-success').forEach(el => el.remove());
 }
 
-// --- Modal de verificación y handlers ---
+// --- Pantalla de verificación (Paso 2 tras registro con API) ---
+function showAuthVerificationStep(email, message, devCode) {
+    const authTabs = document.querySelector('.auth-tabs');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const stepEl = document.getElementById('authVerifyStep');
+    const msgEl = document.getElementById('authVerifyMessage');
+    const devCodeEl = document.getElementById('authVerifyDevCode');
+    const inputEl = document.getElementById('authVerifyCodeInput');
+    const feedbackEl = document.getElementById('authVerifyFeedback');
+
+    if (!stepEl) return;
+    if (authTabs) authTabs.style.display = 'none';
+    if (loginForm) loginForm.style.display = 'none';
+    if (registerForm) registerForm.style.display = 'none';
+
+    if (msgEl) msgEl.textContent = message || 'Ingresa el código de 7 dígitos que te enviamos por correo.';
+    if (devCodeEl) {
+        if (devCode) {
+            devCodeEl.textContent = 'Tu código (desarrollo): ' + devCode;
+            devCodeEl.style.display = 'block';
+            if (inputEl) inputEl.value = devCode;
+        } else {
+            devCodeEl.textContent = '';
+            devCodeEl.style.display = 'none';
+        }
+    }
+    if (inputEl && !devCode) inputEl.value = '';
+    if (feedbackEl) { feedbackEl.textContent = ''; feedbackEl.style.color = ''; }
+
+    stepEl.style.display = 'block';
+    stepEl.dataset.verificationEmail = email;
+}
+
+function hideAuthVerificationStep() {
+    const authTabs = document.querySelector('.auth-tabs');
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const stepEl = document.getElementById('authVerifyStep');
+    if (authTabs) authTabs.style.display = '';
+    if (loginForm) loginForm.style.display = '';
+    if (registerForm) registerForm.style.display = 'none';
+    if (stepEl) stepEl.style.display = 'none';
+}
+
+function setAuthVerifyFeedback(text, isError) {
+    const el = document.getElementById('authVerifyFeedback');
+    if (!el) return;
+    el.style.color = isError ? '#c0392b' : '#27ae60';
+    el.textContent = text;
+}
+
+async function handleAuthVerifyConfirm() {
+    const pending = window._pendingVerification;
+    const inputEl = document.getElementById('authVerifyCodeInput');
+    const confirmBtn = document.getElementById('authVerifyConfirmBtn');
+    if (!pending || !pending.email) { setAuthVerifyFeedback('Sesión de verificación perdida. Vuelve a registrarte.', true); return; }
+    const code = (inputEl && inputEl.value || '').trim();
+    if (code.length !== 7 || !/^\d+$/.test(code)) {
+        setAuthVerifyFeedback('Ingresa un código de 7 dígitos válido.', true);
+        return;
+    }
+    if (confirmBtn) confirmBtn.disabled = true;
+    setAuthVerifyFeedback('Verificando...', false);
+
+    try {
+        const resp = await fetch(API_BASE + '/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: pending.email, code })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            setAuthVerifyFeedback(data.error || 'Error al verificar.', true);
+            if (confirmBtn) confirmBtn.disabled = false;
+            return;
+        }
+        setAuthVerifyFeedback('Correo verificado correctamente.', false);
+        try {
+            const loginResp = await fetch(API_BASE + '/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: pending.email, password: pending.password })
+            });
+            const loginData = await loginResp.json();
+            if (loginResp.ok && loginData.user) {
+                state.currentUser = {
+                    id: loginData.user.id,
+                    email: loginData.user.email,
+                    name: loginData.user.name,
+                    type: loginData.user.type,
+                    imageUrl: loginData.user.imageUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&h=400&fit=crop',
+                    description: loginData.user.description || '',
+                    techStack: []
+                };
+                document.getElementById('authScreen').style.display = 'none';
+                document.getElementById('app').style.display = 'flex';
+                hideAuthVerificationStep();
+                showMainApp();
+                addActivity('Bienvenido a PlusZone', 'Has iniciado sesión correctamente');
+                return;
+            }
+        } catch (e) { console.warn('Auto-login falló:', e); }
+        setAuthVerifyFeedback('Verificado. Ya puedes iniciar sesión con tu correo y contraseña.', false);
+        hideAuthVerificationStep();
+        setTimeout(() => { document.querySelector('.auth-tabs').style.display = ''; document.getElementById('loginForm').style.display = ''; }, 100);
+    } catch (err) {
+        console.error(err);
+        setAuthVerifyFeedback('Error de conexión. Intenta de nuevo.', true);
+        if (confirmBtn) confirmBtn.disabled = false;
+    }
+}
+
+let _authResendCooldown = 0;
+async function handleAuthVerifyResend() {
+    const pending = window._pendingVerification;
+    const resendBtn = document.getElementById('authVerifyResendBtn');
+    if (!pending || !pending.email) { setAuthVerifyFeedback('No se puede reenviar. Vuelve a registrarte.', true); return; }
+    if (_authResendCooldown > Date.now()) { setAuthVerifyFeedback('Espera un momento antes de reenviar.', true); return; }
+    if (resendBtn) resendBtn.disabled = true;
+    setAuthVerifyFeedback('Reenviando código...', false);
+    try {
+        const resp = await fetch(API_BASE + '/api/auth/resend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: pending.email }) });
+        const data = await resp.json();
+        if (!resp.ok) { setAuthVerifyFeedback(data.error || 'Error al reenviar.', true); if (resendBtn) resendBtn.disabled = false; return; }
+        if (data.devCode) {
+            window._pendingVerification.devCode = data.devCode;
+            const devCodeEl = document.getElementById('authVerifyDevCode');
+            const inputEl = document.getElementById('authVerifyCodeInput');
+            if (devCodeEl) { devCodeEl.textContent = 'Tu código (desarrollo): ' + data.devCode; devCodeEl.style.display = 'block'; }
+            if (inputEl) inputEl.value = data.devCode;
+        }
+        setAuthVerifyFeedback(data.devCode ? 'Código de desarrollo actualizado abajo.' : 'Código reenviado. Revisa tu correo.', false);
+        _authResendCooldown = Date.now() + 30000;
+        setTimeout(() => { if (resendBtn) resendBtn.disabled = false; }, 30000);
+    } catch (err) {
+        setAuthVerifyFeedback('Error de conexión.', true);
+        if (resendBtn) resendBtn.disabled = false;
+    }
+}
+
+function handleAuthVerifyBack() {
+    hideAuthVerificationStep();
+    document.querySelector('.auth-tabs').style.display = '';
+    document.getElementById('loginForm').style.display = '';
+}
+
+// --- Modal de verificación (reserva: login cuando no verificado) ---
 function openVerifyModal(email, message, devCode) {
     const modal = document.getElementById('verifyModal');
     const msg = document.getElementById('verifyMessage');
@@ -2723,6 +2872,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (overlay) overlay.style.display = 'none';
         });
     }
+
+    // Pantalla de verificación (Paso 2 tras registro con API)
+    const authVerifyConfirmBtn = document.getElementById('authVerifyConfirmBtn');
+    const authVerifyResendBtn = document.getElementById('authVerifyResendBtn');
+    const authVerifyBackBtn = document.getElementById('authVerifyBackBtn');
+    if (authVerifyConfirmBtn) authVerifyConfirmBtn.addEventListener('click', handleAuthVerifyConfirm);
+    if (authVerifyResendBtn) authVerifyResendBtn.addEventListener('click', handleAuthVerifyResend);
+    if (authVerifyBackBtn) authVerifyBackBtn.addEventListener('click', handleAuthVerifyBack);
 });
 
 // Restablecer datos de ejemplo (empleados, ofertas, descripciones) desde la pantalla de login

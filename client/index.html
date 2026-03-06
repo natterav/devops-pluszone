@@ -99,6 +99,24 @@
                 </div>
                 <button type="submit" class="auth-button">Registrarse</button>
             </form>
+
+            <!-- Pantalla de verificación (Paso 2 tras registro con API) -->
+            <div id="authVerifyStep" class="auth-verify-step" style="display: none;">
+                <h2 class="auth-verify-title">Verifica tu correo</h2>
+                <p class="auth-verify-subtitle">Paso 2: ingresa el código de 7 dígitos que te enviamos</p>
+                <p id="authVerifyMessage" class="auth-verify-message"></p>
+                <div id="authVerifyDevCode" class="verify-dev-code auth-verify-devcode" style="display: none;" role="status"></div>
+                <div class="form-group">
+                    <label for="authVerifyCodeInput">Código de verificación</label>
+                    <input type="text" id="authVerifyCodeInput" placeholder="1234567" maxlength="7" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code">
+                </div>
+                <div id="authVerifyFeedback" class="auth-verify-feedback"></div>
+                <div class="auth-verify-actions">
+                    <button type="button" class="secondary-button" id="authVerifyBackBtn">Volver</button>
+                    <button type="button" class="secondary-button" id="authVerifyResendBtn">Reenviar código</button>
+                    <button type="button" class="auth-button" id="authVerifyConfirmBtn">Verificar y continuar</button>
+                </div>
+            </div>
             </div>
         </div>
     </div>

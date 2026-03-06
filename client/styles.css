@@ -343,6 +343,47 @@ body {
     transform: translateY(0);
 }
 
+/* Pantalla de verificación (Paso 2 tras registro con API) */
+.auth-verify-step {
+    padding: 0.5rem 0;
+    animation: slideUp 0.35s ease-out;
+}
+.auth-verify-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--dark-gray);
+    margin-bottom: 0.35rem;
+}
+.auth-verify-subtitle {
+    font-size: 0.9375rem;
+    color: var(--medium-gray);
+    margin-bottom: 1rem;
+}
+.auth-verify-message {
+    font-size: 0.9375rem;
+    color: var(--dark-gray);
+    margin-bottom: 1rem;
+    line-height: 1.45;
+}
+.auth-verify-devcode {
+    margin-bottom: 1rem;
+}
+.auth-verify-feedback {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    min-height: 1.25rem;
+}
+.auth-verify-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+}
+.auth-verify-actions .auth-button {
+    flex: 1;
+    min-width: 120px;
+}
+
 /* Auth: diseño desktop (mobile se mantiene igual); breakpoint 600px para verse con DevTools abierto */
 @media (min-width: 600px) {
     .auth-screen {
