@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/
+      url: https://github.com/natterav/devops-pluszone.git
     steps:
       - name: Checkout
         uses: actions/checkout@v4
