@@ -96,7 +96,7 @@ Full-Stack-Project--main/
 
 **PlusZone** está desplegada como página web en **GitHub Pages**:
 
-**Repositorio:** [leodaniel-rgb/Avance-proyecto-PlusZone](https://github.com/leodaniel-rgb/Avance-proyecto-PlusZone)
+**Repositorio:** https://github.com/natterav/devops-pluszone
 
 **URL de la aplicación:** **https://leodaniel-rgb.github.io/Avance-proyecto-PlusZone/**
 
