@@ -6,6 +6,29 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const http = require('http');
 const { Server } = require('socket.io');
+const express = require("express");
+const fetch = require("node-fetch");
+
+const app = express();
+app.use(express.json());
+
+app.post("/analyze-cv", async (req, res) => {
+  try {
+    const response = await fetch("http://python-service:8000/analyze", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: req.body.text })
+    });
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    res.status(500).json({ error: "Error connecting to Python service" });
+  }
+});
 
 // Ensure .env exists (copy from .env.example if present and .env missing)
 const fs = require('fs');
