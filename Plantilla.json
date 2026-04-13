@@ -1,0 +1,363 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "PlusZone Infrastructure — EC2 + S3 con IAM LabRole. Sigue buenas practicas de seguridad: subred publica con Security Group restrictivo, acceso a S3 via Instance Profile (LabRole), cifrado SSE-S3 y bloqueo de acceso publico al bucket.",
+
+  "Parameters": {
+    "ProjectName": {
+      "Type": "String",
+      "Default": "pluszone",
+      "Description": "Prefijo usado en todos los recursos para identificacion",
+      "AllowedPattern": "[a-z0-9-]+",
+      "ConstraintDescription": "Solo letras minusculas, numeros y guiones"
+    },
+    "Environment": {
+      "Type": "String",
+      "Default": "dev",
+      "AllowedValues": ["dev", "staging", "prod"],
+      "Description": "Entorno de despliegue"
+    },
+    "InstanceType": {
+      "Type": "String",
+      "Default": "t2.micro",
+      "AllowedValues": ["t2.micro", "t2.small", "t3.micro", "t3.small"],
+      "Description": "Tipo de instancia EC2 (t2.micro elegible para Free Tier)"
+    },
+    "AmiId": {
+      "Type": "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>",
+      "Default": "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2",
+      "Description": "AMI de Amazon Linux 2 (resuelto automaticamente via SSM)"
+    },
+    "KeyPairName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Nombre del Key Pair existente para acceso SSH a EC2"
+    },
+    "AllowedSSHCidr": {
+      "Type": "String",
+      "Default": "0.0.0.0/0",
+      "Description": "CIDR permitido para SSH. Reemplaza con tu IP publica en produccion (ej: 203.0.113.0/32)",
+      "AllowedPattern": "(\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2}"
+    },
+    "LabRoleArn": {
+      "Type": "String",
+      "Default": "arn:aws:iam::ACCOUNT_ID:role/LabRole",
+      "Description": "ARN completo del rol LabRole provisto por AWS Academy. Reemplaza ACCOUNT_ID con tu ID de cuenta."
+    }
+  },
+
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": { "default": "Identificacion del proyecto" },
+          "Parameters": ["ProjectName", "Environment"]
+        },
+        {
+          "Label": { "default": "Configuracion de la instancia EC2" },
+          "Parameters": ["InstanceType", "AmiId", "KeyPairName", "AllowedSSHCidr"]
+        },
+        {
+          "Label": { "default": "IAM — LabRole" },
+          "Parameters": ["LabRoleArn"]
+        }
+      ]
+    }
+  },
+
+  "Resources": {
+
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "Tags": [
+          { "Key": "Name",        "Value": { "Fn::Sub": "${ProjectName}-${Environment}-vpc" } },
+          { "Key": "Project",     "Value": { "Ref": "ProjectName" } },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } }
+        ]
+      }
+    },
+
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          { "Key": "Name",    "Value": { "Fn::Sub": "${ProjectName}-${Environment}-igw" } },
+          { "Key": "Project", "Value": { "Ref": "ProjectName" } }
+        ]
+      }
+    },
+
+    "VPCGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId":             { "Ref": "VPC" },
+        "InternetGatewayId": { "Ref": "InternetGateway" }
+      }
+    },
+
+    "PublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId":               { "Ref": "VPC" },
+        "CidrBlock":           "10.0.1.0/24",
+        "AvailabilityZone":    { "Fn::Select": [0, { "Fn::GetAZs": "" }] },
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          { "Key": "Name",        "Value": { "Fn::Sub": "${ProjectName}-${Environment}-public-subnet" } },
+          { "Key": "Project",     "Value": { "Ref": "ProjectName" } },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } }
+        ]
+      }
+    },
+
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": { "Ref": "VPC" },
+        "Tags": [
+          { "Key": "Name",    "Value": { "Fn::Sub": "${ProjectName}-${Environment}-public-rt" } },
+          { "Key": "Project", "Value": { "Ref": "ProjectName" } }
+        ]
+      }
+    },
+
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "VPCGatewayAttachment",
+      "Properties": {
+        "RouteTableId":       { "Ref": "PublicRouteTable" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId":          { "Ref": "InternetGateway" }
+      }
+    },
+
+    "SubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId":     { "Ref": "PublicSubnet" },
+        "RouteTableId": { "Ref": "PublicRouteTable" }
+      }
+    },
+
+    "EC2SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Permite trafico HTTP (80) y SSH (22) hacia la instancia EC2",
+        "VpcId": { "Ref": "VPC" },
+        "SecurityGroupIngress": [
+          {
+            "Description": "HTTP desde cualquier origen",
+            "IpProtocol":  "tcp",
+            "FromPort":    80,
+            "ToPort":      80,
+            "CidrIp":      "0.0.0.0/0"
+          },
+          {
+            "Description": "HTTPS desde cualquier origen",
+            "IpProtocol":  "tcp",
+            "FromPort":    443,
+            "ToPort":      443,
+            "CidrIp":      "0.0.0.0/0"
+          },
+          {
+            "Description": "SSH — restringir a IP conocida en produccion",
+            "IpProtocol":  "tcp",
+            "FromPort":    22,
+            "ToPort":      22,
+            "CidrIp":      { "Ref": "AllowedSSHCidr" }
+          }
+        ],
+        "SecurityGroupEgress": [
+          {
+            "Description": "Todo el trafico saliente permitido",
+            "IpProtocol":  "-1",
+            "CidrIp":      "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          { "Key": "Name",        "Value": { "Fn::Sub": "${ProjectName}-${Environment}-ec2-sg" } },
+          { "Key": "Project",     "Value": { "Ref": "ProjectName" } },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } }
+        ]
+      }
+    },
+
+    "EC2InstanceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "InstanceProfileName": { "Fn::Sub": "${ProjectName}-${Environment}-instance-profile" },
+        "Roles": [
+          { "Fn::Select": [1, { "Fn::Split": ["/", { "Ref": "LabRoleArn" }] }] }
+        ]
+      }
+    },
+
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "DependsOn": "VPCGatewayAttachment",
+      "Properties": {
+        "ImageId":             { "Ref": "AmiId" },
+        "InstanceType":        { "Ref": "InstanceType" },
+        "KeyName":             { "Ref": "KeyPairName" },
+        "SubnetId":            { "Ref": "PublicSubnet" },
+        "SecurityGroupIds":    [{ "Ref": "EC2SecurityGroup" }],
+        "IamInstanceProfile":  { "Ref": "EC2InstanceProfile" },
+        "Monitoring":          true,
+        "EbsOptimized":        false,
+        "BlockDeviceMappings": [
+          {
+            "DeviceName": "/dev/xvda",
+            "Ebs": {
+              "VolumeSize":          20,
+              "VolumeType":          "gp3",
+              "Encrypted":           true,
+              "DeleteOnTermination": true
+            }
+          }
+        ],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Sub": "#!/bin/bash\nyum update -y\nyum install -y awscli httpd\nsystemctl enable httpd\nsystemctl start httpd\necho '<h1>PlusZone - ${Environment}</h1>' > /var/www/html/index.html\necho 'export BUCKET_NAME=${S3Bucket}' >> /etc/environment\n"
+          }
+        },
+        "Tags": [
+          { "Key": "Name",        "Value": { "Fn::Sub": "${ProjectName}-${Environment}-ec2" } },
+          { "Key": "Project",     "Value": { "Ref": "ProjectName" } },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } }
+        ]
+      }
+    },
+
+    "S3Bucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "${ProjectName}-${Environment}-assets-${AWS::AccountId}"
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls":       true,
+          "BlockPublicPolicy":     true,
+          "IgnorePublicAcls":      true,
+          "RestrictPublicBuckets": true
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id":     "mover-objetos-antiguos-a-ia",
+              "Status": "Enabled",
+              "Transitions": [
+                {
+                  "TransitionInDays": 30,
+                  "StorageClass":     "STANDARD_IA"
+                },
+                {
+                  "TransitionInDays": 90,
+                  "StorageClass":     "GLACIER"
+                }
+              ]
+            }
+          ]
+        },
+        "Tags": [
+          { "Key": "Name",        "Value": { "Fn::Sub": "${ProjectName}-${Environment}-bucket" } },
+          { "Key": "Project",     "Value": { "Ref": "ProjectName" } },
+          { "Key": "Environment", "Value": { "Ref": "Environment" } }
+        ]
+      }
+    },
+
+    "S3BucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": { "Ref": "S3Bucket" },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid":    "DenyNonTLS",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action":    "s3:*",
+              "Resource": [
+                { "Fn::GetAtt": ["S3Bucket", "Arn"] },
+                { "Fn::Sub": "${S3Bucket.Arn}/*" }
+              ],
+              "Condition": {
+                "Bool": { "aws:SecureTransport": "false" }
+              }
+            },
+            {
+              "Sid":    "AllowEC2ViaLabRole",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": { "Ref": "LabRoleArn" }
+              },
+              "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                { "Fn::GetAtt": ["S3Bucket", "Arn"] },
+                { "Fn::Sub": "${S3Bucket.Arn}/*" }
+              ]
+            }
+          ]
+        }
+      }
+    }
+
+  },
+
+  "Outputs": {
+    "VPCId": {
+      "Description": "ID de la VPC creada",
+      "Value": { "Ref": "VPC" },
+      "Export": { "Name": { "Fn::Sub": "${ProjectName}-${Environment}-vpc-id" } }
+    },
+    "EC2InstanceId": {
+      "Description": "ID de la instancia EC2",
+      "Value": { "Ref": "EC2Instance" },
+      "Export": { "Name": { "Fn::Sub": "${ProjectName}-${Environment}-ec2-id" } }
+    },
+    "EC2PublicIP": {
+      "Description": "IP publica de la instancia EC2",
+      "Value": { "Fn::GetAtt": ["EC2Instance", "PublicIp"] }
+    },
+    "EC2PublicDNS": {
+      "Description": "DNS publico de la instancia EC2",
+      "Value": { "Fn::GetAtt": ["EC2Instance", "PublicDnsName"] }
+    },
+    "S3BucketName": {
+      "Description": "Nombre del bucket S3",
+      "Value": { "Ref": "S3Bucket" },
+      "Export": { "Name": { "Fn::Sub": "${ProjectName}-${Environment}-bucket-name" } }
+    },
+    "S3BucketArn": {
+      "Description": "ARN del bucket S3",
+      "Value": { "Fn::GetAtt": ["S3Bucket", "Arn"] },
+      "Export": { "Name": { "Fn::Sub": "${ProjectName}-${Environment}-bucket-arn" } }
+    },
+    "SecurityGroupId": {
+      "Description": "ID del Security Group de EC2",
+      "Value": { "Ref": "EC2SecurityGroup" }
+    }
+  }
+}
