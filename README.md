@@ -54,11 +54,14 @@ La aplicación está diseñada con un enfoque en la experiencia de usuario, ofre
 - **JavaScript (Vanilla)**: Lógica de la aplicación sin frameworks
 - **localStorage**: Almacenamiento local de datos
 - **Unsplash API**: Imágenes de perfil de ejemplo
+- **Python Flask**: Backend API
+- **PostgreSQL**: Base de datos
+- **Jenkins**: CI/CD para despliegue
 
 ## 📁 Estructura del Proyecto
 
 ```
-Full-Stack-Project--main/
+devops-pluszone/
 │
 ├── client/                    # Frontend de la aplicación
 │   ├── index.html            # Estructura HTML principal
@@ -66,17 +69,14 @@ Full-Stack-Project--main/
 │   ├── app.js                # Lógica principal de la aplicación
 │   └── database.js           # Simulación de base de datos con localStorage
 │
-├── server/                    # Backend (Express + Supabase/PostgreSQL)
-│   ├── index.js              # Servidor Express principal
-│   ├── db.js                 # Configuración de conexión a Supabase (PostgreSQL)
-│   ├── init_db.js            # Script de migración (esquema + seeds)
-│   ├── outboxWorker.js       # Worker para reintentos de envío de correo
-│   ├── package.json          # Dependencias del servidor
-│   ├── README_API.md         # Documentación de la API
-│   └── node_modules/         # Dependencias instaladas
+├── server/                    # Backend (Python Flask + PostgreSQL)
+│   ├── app.py                # Servidor Flask principal
+│   ├── requirements.txt      # Dependencias Python
+│   ├── .env                  # Variables de entorno
+│   └── verification_debug.log # Log de verificación de correos
 │
 ├── database/                  # Datos de referencia
-│   ├── pluszone_supabase.sql # Esquema PostgreSQL (fallback para npm run migrate)
+│   ├── pluszone_supabase.sql # Esquema PostgreSQL
 │   ├── database.json         # Datos de ejemplo en formato JSON
 │   └── README_DB.md          # Documentación de la base de datos
 │
@@ -91,6 +91,39 @@ Full-Stack-Project--main/
 │
 └── README.md                  # Este archivo (documentación principal)
 ```
+
+## 🛠️ Instalación
+
+### Prerrequisitos
+- Python 3.8+
+- PostgreSQL (o Supabase)
+- Git
+
+### Instalación del Backend
+1. Clona el repositorio:
+   ```bash
+   git clone https://github.com/natterav/devops-pluszone.git
+   cd devops-pluszone
+   ```
+
+2. Instala las dependencias del servidor:
+   ```bash
+   cd server
+   pip install -r requirements.txt
+   ```
+
+3. Configura las variables de entorno:
+   Copia `server/.env.example` a `server/.env` y completa las credenciales (DATABASE_URL, etc.).
+
+4. Ejecuta el servidor:
+   ```bash
+   python app.py
+   ```
+
+### Despliegue con Jenkins
+1. Configura Jenkins con el repositorio GitHub.
+2. Usa el `Jenkinsfile` incluido para el pipeline de CI/CD.
+3. Asegúrate de que el servidor de despliegue tenga Python y las dependencias instaladas.
 
 ## 🌐 Acceso a la aplicación
 

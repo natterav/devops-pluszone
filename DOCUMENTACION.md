@@ -34,7 +34,7 @@ y arranca el servidor (por ejemplo `node server/index.js` o `npm start` en `serv
 
 - **Frontend:** HTML, CSS, JavaScript (vanilla). Sin framework.
 - **Base de datos en el navegador:** `client/database.js` — simula una DB con localStorage (usuarios, perfiles, swipes, matches, mensajes).
-- **Servidor (opcional):** Node.js + Express en `server/`. API REST para registro con verificación por correo, login, perfiles; usa PostgreSQL y opcionalmente SMTP/API de email para el código.
+- **Servidor (Backend):** Python + Flask en `server/`. API REST para registro con verificación por correo, login, perfiles; usa PostgreSQL y opcionalmente SMTP/API de email para el código.
 
 ---
 
@@ -50,14 +50,15 @@ Avance-proyecto-PlusZone/
 │   ├── config.js           # API_BASE, Supabase (URL y clave); en deploy se inyectan
 │   ├── DEMO-CREDENTIALS.md # Credenciales de ejemplo (empleado y empresa)
 │   └── ...
-├── server/                 # Backend (opcional)
-│   ├── index.js            # Express: rutas /api/auth/*, /api/profiles, Socket.IO, envío de código
-│   ├── db.js               # Conexión a PostgreSQL
-│   ├── init_db.js          # Migración y seed de la DB
+├── server/                 # Backend (Python Flask)
+│   ├── app.py              # Flask: rutas /api/auth/*, /api/profiles, Socket.IO, envío de código
+│   ├── requirements.txt    # Dependencias Python
+│   ├── .env                # Variables de entorno (DATABASE_URL, etc.)
 │   └── ...
 ├── database/               # Esquema SQL (PostgreSQL/Supabase)
 │   └── pluszone_supabase.sql
 ├── DOCUMENTACION.md        # Este archivo
+├── Jenkinsfile             # Configuración para Jenkins CI/CD
 └── ...
 ```
 
