@@ -4,9 +4,10 @@ import re
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
+from urllib.parse import urlparse
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+import pg8000
+from pg8000 import Cursor
 import jwt
 import bcrypt
 import smtplib
@@ -18,6 +19,30 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
+# Compatibility class for RealDictCursor with pg8000
+class RealDictCursor:
+    def __init__(self, connection):
+        self.cursor = connection.cursor()
+
+    def execute(self, query, params=None):
+        self.cursor.execute(query, params)
+
+    def fetchall(self):
+        columns = [desc[0] for desc in self.cursor.description]
+        rows = self.cursor.fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+
+    def fetchone(self):
+        columns = [desc[0] for desc in self.cursor.description]
+        row = self.cursor.fetchone()
+        return dict(zip(columns, row)) if row else None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cursor.close()
 from flask_socketio import SocketIO, emit
 
 # Load environment variables
@@ -70,7 +95,15 @@ SMTP_AVAILABLE = False
 def get_db_connection():
     """Get a database connection."""
     try:
-        conn = psycopg2.connect(DB_URL, sslmode='require' if 'supabase.co' in DB_URL else 'disable')
+        parsed = urlparse(DB_URL)
+        conn = pg8000.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            database=parsed.path.lstrip('/'),
+            user=parsed.username,
+            password=parsed.password,
+            ssl=True if 'supabase.co' in DB_URL else False
+        )
         return conn
     except Exception as e:
         print(f"Database connection error: {e}")
@@ -353,7 +386,7 @@ def auth_session(payload):
         user_type = metadata.get('user_type', 'employee')
         
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         # Check if user exists
         cur.execute(
@@ -442,7 +475,7 @@ def auth_register():
     
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         # Check if user exists
         cur.execute('SELECT id, is_active FROM users WHERE email = %s', (email,))
@@ -548,7 +581,7 @@ def auth_verify():
     
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         # Get user
         cur.execute('SELECT id, is_active FROM users WHERE email = %s', (email,))
@@ -618,7 +651,7 @@ def auth_resend():
     
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         # Get user
         cur.execute('SELECT id FROM users WHERE email = %s', (email,))
@@ -684,7 +717,7 @@ def auth_login():
     
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         cur.execute(
             """SELECT id, email, password_hash, name, user_type, image_url, description, is_active
@@ -724,7 +757,7 @@ def get_profiles():
     """Get all profiles of active users."""
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         cur.execute(
             """SELECT p.*, u.email, u.user_type, u.is_active
@@ -755,7 +788,7 @@ def create_profile():
     
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = RealDictCursor(conn)
         
         cur.execute(
             """INSERT INTO profiles (user_id, name, role) VALUES (%s, %s, %s) RETURNING id""",
@@ -876,15 +909,16 @@ def ensure_database_ready():
             cur.close()
             conn.close()
             return
-        except psycopg2.errors.UndefinedTable:
-            print('Tables missing detected. Running migrations...')
-            
-            # Run migrations from database/pluszone_supabase.sql or server migrations
-            # For now, we'll create basic tables here
-            migrations = """
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) UNIQUE NOT NULL,
+        except Exception as e:
+            if 'does not exist' in str(e).lower() or 'undefined table' in str(e).lower():
+                print('Tables missing detected. Running migrations...')
+                
+                # Run migrations from database/pluszone_supabase.sql or server migrations
+                # For now, we'll create basic tables here
+                migrations = """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    email VARCHAR(255) UNIQUE NOT NULL,
                 password_hash VARCHAR(255),
                 name VARCHAR(255),
                 user_type VARCHAR(50) DEFAULT 'employee',
