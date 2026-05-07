@@ -5,9 +5,8 @@ from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
+import sqlite3
 
-import pg8000
-from pg8000 import Cursor
 import jwt
 import bcrypt
 import smtplib
@@ -19,30 +18,6 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-
-# Compatibility class for RealDictCursor with pg8000
-class RealDictCursor:
-    def __init__(self, connection):
-        self.cursor = connection.cursor()
-
-    def execute(self, query, params=None):
-        self.cursor.execute(query, params)
-
-    def fetchall(self):
-        columns = [desc[0] for desc in self.cursor.description]
-        rows = self.cursor.fetchall()
-        return [dict(zip(columns, row)) for row in rows]
-
-    def fetchone(self):
-        columns = [desc[0] for desc in self.cursor.description]
-        row = self.cursor.fetchone()
-        return dict(zip(columns, row)) if row else None
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.cursor.close()
 from flask_socketio import SocketIO, emit
 
 # Load environment variables
@@ -91,20 +66,45 @@ api_token_cache = {'token': None, 'expiresAt': 0}
 # SMTP availability flag
 SMTP_AVAILABLE = False
 
+# Compatibility class for RealDictCursor with SQLite
+class RealDictCursor:
+    def __init__(self, connection):
+        self.cursor = connection.cursor()
+
+    def execute(self, query, params=None):
+        if params:
+            self.cursor.execute(query, params)
+        else:
+            self.cursor.execute(query)
+
+    def fetchall(self):
+        columns = [desc[0] for desc in self.cursor.description] if self.cursor.description else []
+        rows = self.cursor.fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+
+    def fetchone(self):
+        columns = [desc[0] for desc in self.cursor.description] if self.cursor.description else []
+        row = self.cursor.fetchone()
+        return dict(zip(columns, row)) if row else None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cursor.close()
+
 # --- Database Connection ---
 def get_db_connection():
     """Get a database connection."""
     try:
-        parsed = urlparse(DB_URL)
-        conn = pg8000.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            database=parsed.path.lstrip('/'),
-            user=parsed.username,
-            password=parsed.password,
-            ssl=True if 'supabase.co' in DB_URL else False
-        )
-        return conn
+        if DB_URL.startswith('sqlite:///'):
+            db_path = DB_URL.replace('sqlite:///', '')
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row  # Para acceso por nombre de columna
+            return conn
+        else:
+            # Fallback para otras bases de datos si es necesario
+            raise ValueError("Unsupported database URL")
     except Exception as e:
         print(f"Database connection error: {e}")
         raise
@@ -242,13 +242,12 @@ def enqueue_outbox(to_email, subject, text, payload=None):
         
         cur.execute(
             """INSERT INTO email_outbox (to_email, subject, text, payload, status, attempts, next_attempt_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (to_email, subject, text, json.dumps(payload or {}), 'pending', 0, next_attempt)
         )
         
-        email_id = cur.fetchone()[0]
+        email_id = cur.lastrowid
         conn.commit()
-        cur.close()
         conn.close()
         
         print(f'Email enqueued in outbox id {email_id} for {to_email}')
@@ -390,16 +389,16 @@ def auth_session(payload):
         
         # Check if user exists
         cur.execute(
-            'SELECT id, email, name, user_type, image_url, description FROM users WHERE email = %s',
+            'SELECT id, email, name, user_type, image_url, description FROM users WHERE email = ?',
             (email,)
         )
         existing = cur.fetchone()
         
         if existing:
             # Update user to active
-            cur.execute('UPDATE users SET is_active = true, updated_at = NOW() WHERE id = %s', (existing['id'],))
+            cur.execute('UPDATE users SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', (existing['id'],))
             conn.commit()
-            cur.close()
+            
             conn.close()
             
             return jsonify({
@@ -417,15 +416,15 @@ def auth_session(payload):
         # Create new user
         cur.execute(
             """INSERT INTO users (email, password_hash, name, user_type, image_url, description, is_active)
-               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (email, '', name, user_type, None, None, True)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (email, '', name, user_type, None, None, 1)
         )
-        user_id = cur.fetchone()['id']
+        user_id = cur.lastrowid
         
         # Create profile
         cur.execute(
             """INSERT INTO profiles (user_id, name, description, detailed_description, tech_stack, salary, image_url, role)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (user_id, name, '', '', json.dumps([]), '', None, 'job' if user_type == 'company' else 'candidate')
         )
         
@@ -433,13 +432,13 @@ def auth_session(payload):
         
         # Get profile and emit event
         try:
-            cur.execute('SELECT * FROM profiles WHERE user_id = %s LIMIT 1', (user_id,))
+            cur.execute('SELECT * FROM profiles WHERE user_id = ? LIMIT 1', (user_id,))
             profile = cur.fetchone()
             socketio.emit('user_verified', {'user': {'id': user_id, 'email': email}, 'profile': dict(profile) if profile else None}, broadcast=True)
         except:
             pass
         
-        cur.close()
+        
         conn.close()
         
         return jsonify({
@@ -478,12 +477,12 @@ def auth_register():
         cur = RealDictCursor(conn)
         
         # Check if user exists
-        cur.execute('SELECT id, is_active FROM users WHERE email = %s', (email,))
+        cur.execute('SELECT id, is_active FROM users WHERE email = ?', (email,))
         existing = cur.fetchone()
         
         if existing:
             if existing['is_active']:
-                cur.close()
+                
                 conn.close()
                 return jsonify({'error': 'Correo ya registrado'}), 400
             
@@ -494,8 +493,8 @@ def auth_register():
             
             cur.execute(
                 """INSERT INTO email_verifications (user_id, code, expires_at, verified)
-                   VALUES (%s, %s, %s, %s)""",
-                (user_id, code, expires_at, False)
+                   VALUES (?, ?, ?, ?)""",
+                (user_id, code, expires_at, 0)
             )
             conn.commit()
             
@@ -503,7 +502,7 @@ def auth_register():
             text = f'Tu código de verificación de 7 dígitos es: {code}. El código expira en {VERIFICATION_EXPIRATION_MINUTES} minutos.'
             
             send_result = send_verification_email(email, code, subject, text)
-            cur.close()
+            
             conn.close()
             
             if send_result['sent']:
@@ -521,15 +520,15 @@ def auth_register():
         password_hash = hash_password(password)
         cur.execute(
             """INSERT INTO users (email, password_hash, name, user_type, image_url, description, is_active)
-               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-            (email, password_hash, name, user_type, None, None, False)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (email, password_hash, name, user_type, None, None, 0)
         )
-        user_id = cur.fetchone()['id']
+        user_id = cur.lastrowid
         
         # Create profile
         cur.execute(
             """INSERT INTO profiles (user_id, name, description, detailed_description, tech_stack, salary, image_url, role)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (user_id, name, '', '', json.dumps([]), '', None, 'job' if user_type == 'company' else 'candidate')
         )
         
@@ -538,8 +537,8 @@ def auth_register():
         expires_at = datetime.now() + timedelta(minutes=VERIFICATION_EXPIRATION_MINUTES)
         cur.execute(
             """INSERT INTO email_verifications (user_id, code, expires_at, verified)
-               VALUES (%s, %s, %s, %s)""",
-            (user_id, code, expires_at, False)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, code, expires_at, 0)
         )
         
         conn.commit()
@@ -548,7 +547,7 @@ def auth_register():
         text = f'Tu código de verificación de 7 dígitos es: {code}. El código expira en {VERIFICATION_EXPIRATION_MINUTES} minutos.'
         
         send_result = send_verification_email(email, code, subject, text)
-        cur.close()
+        
         conn.close()
         
         if send_result['sent']:
@@ -584,54 +583,54 @@ def auth_verify():
         cur = RealDictCursor(conn)
         
         # Get user
-        cur.execute('SELECT id, is_active FROM users WHERE email = %s', (email,))
+        cur.execute('SELECT id, is_active FROM users WHERE email = ?', (email,))
         user = cur.fetchone()
         if not user:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Usuario no encontrado'}), 404
         
         # Get verification record
         cur.execute(
             """SELECT id, code, expires_at, verified FROM email_verifications
-               WHERE user_id = %s ORDER BY id DESC LIMIT 1""",
+               WHERE user_id = ? ORDER BY id DESC LIMIT 1""",
             (user['id'],)
         )
         record = cur.fetchone()
         if not record:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Código no encontrado. Solicita uno nuevo.'}), 404
         
         if record['verified']:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Código ya verificado'}), 400
         
         if datetime.now() > record['expires_at']:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Código expirado'}), 400
         
         if record['code'] != code:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Código incorrecto'}), 400
         
         # Mark as verified
-        cur.execute('UPDATE email_verifications SET verified = true WHERE id = %s', (record['id'],))
-        cur.execute('UPDATE users SET is_active = true WHERE id = %s', (user['id'],))
+        cur.execute('UPDATE email_verifications SET verified = 1 WHERE id = ?', (record['id'],))
+        cur.execute('UPDATE users SET is_active = 1 WHERE id = ?', (user['id'],))
         conn.commit()
         
         # Emit socket event
         try:
-            cur.execute('SELECT * FROM profiles WHERE user_id = %s LIMIT 1', (user['id'],))
+            cur.execute('SELECT * FROM profiles WHERE user_id = ? LIMIT 1', (user['id'],))
             profile = cur.fetchone()
             socketio.emit('user_verified', {'user': {'id': user['id'], 'email': email}, 'profile': dict(profile) if profile else None}, broadcast=True)
         except:
             pass
         
-        cur.close()
+        
         conn.close()
         
         return jsonify({'ok': True, 'message': 'Correo verificado correctamente'})
@@ -654,22 +653,22 @@ def auth_resend():
         cur = RealDictCursor(conn)
         
         # Get user
-        cur.execute('SELECT id FROM users WHERE email = %s', (email,))
+        cur.execute('SELECT id FROM users WHERE email = ?', (email,))
         user = cur.fetchone()
         if not user:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Usuario no encontrado'}), 404
         
         # Check rate limit
         cur.execute(
             """SELECT COUNT(*) as cnt FROM email_verifications
-               WHERE user_id = %s AND created_at > NOW() - INTERVAL '1 hour'""",
+               WHERE user_id = ? AND created_at > datetime('now', '-1 hour')""",
             (user['id'],)
         )
         cnt = cur.fetchone()['cnt']
         if cnt >= 3:
-            cur.close()
+            
             conn.close()
             return jsonify({'error': 'Has solicitado demasiados códigos. Intenta más tarde.'}), 429
         
@@ -678,8 +677,8 @@ def auth_resend():
         expires_at = datetime.now() + timedelta(minutes=VERIFICATION_EXPIRATION_MINUTES)
         cur.execute(
             """INSERT INTO email_verifications (user_id, code, expires_at, verified)
-               VALUES (%s, %s, %s, %s)""",
-            (user['id'], code, expires_at, False)
+               VALUES (?, ?, ?, ?)""",
+            (user['id'], code, expires_at, 0)
         )
         conn.commit()
         
@@ -687,7 +686,7 @@ def auth_resend():
         text = f'Tu código de verificación de 7 dígitos es: {code}. El código expira en {VERIFICATION_EXPIRATION_MINUTES} minutos.'
         
         send_result = send_verification_email(email, code, subject, text)
-        cur.close()
+        
         conn.close()
         
         if send_result['sent']:
@@ -721,11 +720,11 @@ def auth_login():
         
         cur.execute(
             """SELECT id, email, password_hash, name, user_type, image_url, description, is_active
-               FROM users WHERE email = %s""",
+               FROM users WHERE email = ?""",
             (email,)
         )
         user = cur.fetchone()
-        cur.close()
+        
         conn.close()
         
         if not user:
@@ -763,16 +762,16 @@ def get_profiles():
             """SELECT p.*, u.email, u.user_type, u.is_active
                FROM profiles p
                JOIN users u ON p.user_id = u.id
-               WHERE u.is_active = true
+               WHERE u.is_active = 1
                ORDER BY p.created_at DESC"""
         )
         profiles = cur.fetchall()
-        cur.close()
         conn.close()
         
         return jsonify({'ok': True, 'profiles': [dict(p) for p in profiles]})
     except Exception as e:
         print(f'Error in get_profiles: {e}')
+        return jsonify({'error': 'Error interno'}), 500
         return jsonify({'error': 'Error interno'}), 500
 
 @app.route('/api/profiles', methods=['POST'])
@@ -791,10 +790,10 @@ def create_profile():
         cur = RealDictCursor(conn)
         
         cur.execute(
-            """INSERT INTO profiles (user_id, name, role) VALUES (%s, %s, %s) RETURNING id""",
+            """INSERT INTO profiles (user_id, name, role) VALUES (?, ?, ?)""",
             (user_id, name, role)
         )
-        new_id = cur.fetchone()['id']
+        new_id = cur.lastrowid
         
         conn.commit()
         
@@ -802,7 +801,7 @@ def create_profile():
         try:
             cur.execute(
                 """SELECT p.*, u.email, u.user_type FROM profiles p
-                   JOIN users u ON p.user_id = u.id WHERE p.id = %s LIMIT 1""",
+                   JOIN users u ON p.user_id = u.id WHERE p.id = ? LIMIT 1""",
                 (new_id,)
             )
             new_profile = cur.fetchone()
@@ -811,7 +810,7 @@ def create_profile():
         except:
             pass
         
-        cur.close()
+        
         conn.close()
         
         return jsonify({'ok': True, 'id': new_id})
@@ -906,75 +905,82 @@ def ensure_database_ready():
         try:
             cur.execute('SELECT 1 FROM users LIMIT 1')
             print('Database ready: tables available.')
-            cur.close()
+            
             conn.close()
             return
         except Exception as e:
-            if 'does not exist' in str(e).lower() or 'undefined table' in str(e).lower():
+            if 'no such table' in str(e).lower() or 'table' not in str(e).lower():
                 print('Tables missing detected. Running migrations...')
+
+                # Run migrations for SQLite - execute each statement separately
+                migration_statements = [
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email VARCHAR(255) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255),
+                        name VARCHAR(255),
+                        user_type VARCHAR(50) DEFAULT 'employee',
+                        image_url TEXT,
+                        description TEXT,
+                        is_active INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS email_verifications (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        code VARCHAR(10) NOT NULL,
+                        expires_at TIMESTAMP NOT NULL,
+                        verified INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    );
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS profiles (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL,
+                        name VARCHAR(255),
+                        description TEXT,
+                        detailed_description TEXT,
+                        tech_stack TEXT DEFAULT '[]',
+                        salary VARCHAR(100),
+                        image_url TEXT,
+                        role VARCHAR(50) DEFAULT 'candidate',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    );
+                    """,
+                    """
+                    CREATE TABLE IF NOT EXISTS email_outbox (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        to_email VARCHAR(255) NOT NULL,
+                        subject VARCHAR(255),
+                        text TEXT,
+                        payload TEXT,
+                        status VARCHAR(50) DEFAULT 'pending',
+                        attempts INTEGER DEFAULT 0,
+                        last_error TEXT,
+                        next_attempt_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """,
+                    "CREATE INDEX IF NOT EXISTS idx_email_outbox_status_next ON email_outbox(status, next_attempt_at);",
+                    "CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);",
+                    "CREATE INDEX IF NOT EXISTS idx_email_verifications_user_id ON email_verifications(user_id);"
+                ]
                 
-                # Run migrations from database/pluszone_supabase.sql or server migrations
-                # For now, we'll create basic tables here
-                migrations = """
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL PRIMARY KEY,
-                    email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255),
-                name VARCHAR(255),
-                user_type VARCHAR(50) DEFAULT 'employee',
-                image_url TEXT,
-                description TEXT,
-                is_active BOOLEAN DEFAULT false,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
-            );
+                for statement in migration_statements:
+                    cur.execute(statement)
+                
+                conn.commit()
+                print('Migrations executed successfully.')
             
-            CREATE TABLE IF NOT EXISTS email_verifications (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                code VARCHAR(10) NOT NULL,
-                expires_at TIMESTAMP NOT NULL,
-                verified BOOLEAN DEFAULT false,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE TABLE IF NOT EXISTS profiles (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                name VARCHAR(255),
-                description TEXT,
-                detailed_description TEXT,
-                tech_stack JSONB DEFAULT '[]'::jsonb,
-                salary VARCHAR(100),
-                image_url TEXT,
-                role VARCHAR(50) DEFAULT 'candidate',
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE TABLE IF NOT EXISTS email_outbox (
-                id SERIAL PRIMARY KEY,
-                to_email VARCHAR(255) NOT NULL,
-                subject VARCHAR(255),
-                text TEXT,
-                payload JSONB,
-                status VARCHAR(50) DEFAULT 'pending',
-                attempts INTEGER DEFAULT 0,
-                last_error TEXT,
-                next_attempt_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_email_outbox_status_next ON email_outbox(status, next_attempt_at);
-            CREATE INDEX IF NOT EXISTS idx_profiles_user_id ON profiles(user_id);
-            CREATE INDEX IF NOT EXISTS idx_email_verifications_user_id ON email_verifications(user_id);
-            """
-            
-            cur.execute(migrations)
-            conn.commit()
-            print('Migrations executed successfully.')
-            cur.close()
             conn.close()
     except Exception as e:
         print(f'Error ensuring database: {e}')
