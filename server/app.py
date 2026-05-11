@@ -1020,4 +1020,4 @@ if __name__ == '__main__':
         sys.exit(1)
     
     print(f'API + Socket.IO server listening on port {PORT}')
-    socketio.run(app, host='0.0.0.0', port=PORT, debug=NODE_ENV == 'development')
+    socketio.run(app, host='0.0.0.0', port=PORT, debug=NODE_ENV == 'development', allow_unsafe_werkzeug=True)
