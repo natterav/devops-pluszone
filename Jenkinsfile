@@ -56,7 +56,7 @@ pipeline {
                     netstat -ano | findstr ":4000" | findstr "LISTENING" >nul 2>&1
                     if errorlevel 1 (
                         echo ERROR: El servidor no levanto. Contenido del log:
-                        type server\app.log
+                        type server\\app.log
                         exit /b 1
                     )
                     echo EXITO: Servidor corriendo en http://localhost:4000
