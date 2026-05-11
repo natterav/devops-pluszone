@@ -37,7 +37,8 @@ pipeline {
                     setlocal enabledelayedexpansion
                     set CHANGES=0
                     for /f %%i in ('git diff --name-only HEAD~1 2^>nul') do (
-                        if (echo %%i | findstr "Jenkinsfile" >nul) (set CHANGES=1) else if (echo %%i | findstr "server" >nul) (set CHANGES=1)
+                        if (echo %%i | findstr "Jenkinsfile" >nul) (set CHANGES=1)
+                        if (echo %%i | findstr "server" >nul) (set CHANGES=1)
                     )
                     if !CHANGES!==1 (
                         echo "Changes detected in server/ or Jenkinsfile. Deploying..."
