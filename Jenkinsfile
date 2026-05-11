@@ -39,9 +39,9 @@ pipeline {
                         taskkill /PID %%a /F /T 2>nul || exit /b 0
                     )
                 '''
-                bat 'timeout /t 2 /nobreak'
+                bat 'ping localhost -n 3 >nul'
                 bat 'cd server && start /B python app.py 1>> app.log 2>&1'
-                bat 'timeout /t 3 /nobreak'
+                bat 'ping localhost -n 4 >nul'
                 bat '''
                     netstat -ano | findstr ":4000" | findstr "LISTENING" >nul
                     if errorlevel 1 (
