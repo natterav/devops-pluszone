@@ -46,7 +46,7 @@ pipeline {
                 // Esperar a que se libere el puerto
                 bat 'timeout /t 2 /nobreak'
                 // Iniciar el servidor Flask en background
-                bat 'cd server && start /B python app.py 1>> app.log 2>&1'
+                bat 'cd server && powershell -Command "Start-Process python -ArgumentList app.py -NoNewWindow -RedirectStandardOutput app.log -RedirectStandardError app.log"'
                 // Esperar a que el servidor inicie
                 bat 'timeout /t 3 /nobreak'
                 // Validar que el servidor está escuchando en puerto 4000
@@ -58,6 +58,8 @@ pipeline {
                     )
                     echo EXITO: Servidor iniciado correctamente en puerto 4000
                 '''
+                // Verificar que el servidor responde a requests HTTP
+                bat 'powershell -Command "try { $response = Invoke-WebRequest -Uri http://localhost:4000 -TimeoutSec 10; if ($response.StatusCode -eq 200) { Write-Host \"EXITO: Servidor responde correctamente\" } else { Write-Host \"ERROR: Servidor no responde con 200\"; exit 1 } } catch { Write-Host \"ERROR: No se puede conectar al servidor: $_\"; exit 1 }"'
             }
         }
     }
