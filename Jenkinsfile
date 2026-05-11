@@ -40,7 +40,7 @@ pipeline {
                         if (echo %%i | findstr "Jenkinsfile" >nul) (set CHANGES=1)
                         if (echo %%i | findstr "server" >nul) (set CHANGES=1)
                     )
-                    if !CHANGES!==1 (
+                    if !CHANGES! equ 1 (
                         echo "Changes detected in server/ or Jenkinsfile. Deploying..."
                         REM Matar solo el proceso Python que escucha en el puerto 4000
                         for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":4000"') do (
