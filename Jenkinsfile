@@ -32,23 +32,41 @@ pipeline {
         }
 
         stage('Deploy') {
+            when {
+                anyOf {
+                    changeset "server/**"
+                    changeset "Jenkinsfile"
+                }
+            }
             steps {
                 echo 'Desplegando servidor...'
+
+                // Matar proceso en puerto 4000 solo si existe
                 bat '''
-                    for /F "tokens=5" %%a in ('netstat -ano ^| findstr ":4000"') do (
-                        taskkill /PID %%a /F /T 2>nul || exit /b 0
+                    netstat -ano | findstr ":4000" | findstr "LISTENING" >nul 2>&1
+                    if not errorlevel 1 (
+                        for /F "tokens=5" %%a in ('netstat -ano ^| findstr ":4000" ^| findstr "LISTENING"') do (
+                            taskkill /PID %%a /F /T >nul 2>&1
+                        )
+                        ping localhost -n 3 >nul
                     )
                 '''
-                bat 'ping localhost -n 3 >nul'
+
+                // Arrancar el servidor Flask en segundo plano
                 bat 'cd server && start /B python app.py 1>> app.log 2>&1'
-                bat 'ping localhost -n 4 >nul'
+
+                // Esperar a que Flask inicialice
+                bat 'ping localhost -n 5 >nul'
+
+                // Validar que el servidor esta escuchando
                 bat '''
-                    netstat -ano | findstr ":4000" | findstr "LISTENING" >nul
+                    netstat -ano | findstr ":4000" | findstr "LISTENING" >nul 2>&1
                     if errorlevel 1 (
-                        echo ERROR: Servidor no inicio correctamente. Verificar logs.
+                        echo ERROR: Servidor no inicio correctamente.
+                        type app.log
                         exit /b 1
                     )
-                    echo EXITO: Servidor iniciado correctamente en puerto 4000
+                    echo EXITO: Servidor corriendo en puerto 4000
                 '''
             }
         }
