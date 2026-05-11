@@ -45,7 +45,19 @@ pipeline {
                 '''
                 // Esperar a que se libere el puerto
                 bat 'timeout /t 2 /nobreak'
-                bat 'cd server && start cmd /c "python app.py > app.log 2>&1"'
+                // Iniciar el servidor Flask en background
+                bat 'cd server && start /B python app.py 1>> app.log 2>&1'
+                // Esperar a que el servidor inicie
+                bat 'timeout /t 3 /nobreak'
+                // Validar que el servidor está escuchando en puerto 4000
+                bat '''
+                    netstat -ano | findstr ":4000" | findstr "LISTENING" >nul
+                    if errorlevel 1 (
+                        echo ERROR: Servidor no inicio correctamente. Verificar logs.
+                        exit /b 1
+                    )
+                    echo EXITO: Servidor iniciado correctamente en puerto 4000
+                '''
             }
         }
     }
