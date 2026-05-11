@@ -6,6 +6,8 @@ from functools import wraps
 from pathlib import Path
 from urllib.parse import urlparse
 import sqlite3
+import psycopg2
+import psycopg2.extras
 
 import jwt
 import bcrypt
@@ -87,6 +89,10 @@ class RealDictCursor:
         row = self.cursor.fetchone()
         return dict(zip(columns, row)) if row else None
 
+    @property
+    def lastrowid(self):
+        return self.cursor.lastrowid
+
     def __enter__(self):
         return self
 
@@ -102,8 +108,13 @@ def get_db_connection():
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row  # Para acceso por nombre de columna
             return conn
+        elif DB_URL.startswith('postgresql://'):
+            conn = psycopg2.connect(DB_URL)
+            # Use RealDictCursor for dict-like access
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            conn.cursor = lambda: cur  # Override to always return dict cursor
+            return conn
         else:
-            # Fallback para otras bases de datos si es necesario
             raise ValueError("Unsupported database URL")
     except Exception as e:
         print(f"Database connection error: {e}")
