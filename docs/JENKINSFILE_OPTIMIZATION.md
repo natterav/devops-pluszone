@@ -151,8 +151,114 @@ Se recomienda monitorear:
 
 - `Jenkinsfile` - Commit: `cf7536f`
 
+## Segunda Iteración: Validación del Servidor Post-Despliegue
+
+### Problema Identificado
+
+Después de la implementación de la primera versión, se detectó que el servidor Flask se iniciaba pero no siempre estaba listo para recibir conexiones. El netstat mostraba múltiples conexiones en estado `SYN_SENT` pero sin procesos en `LISTENING`, indicando que:
+
+1. El comando `start cmd /c "python app.py"` creaba una ventana CMD separada
+2. No había tiempo de espera para que Flask inicializara completamente
+3. El pipeline no validaba si el servidor estaba realmente operacional
+
+### Síntomas
+
+```
+TCP    127.0.0.1:52977    127.0.0.1:4000    SYN_SENT     43444
+TCP    127.0.0.1:60136    127.0.0.1:4000    SYN_SENT     43444
+```
+
+Múltiples intentos de conexión fallidos sugieren que Jenkins continuaba sin esperar a que el servidor estuviera listo.
+
+### Soluciones Implementadas en Segunda Iteración
+
+#### 1. Comando de Inicio Mejorado
+
+Cambio de:
+```batch
+start cmd /c "python app.py > app.log 2>&1"
+```
+
+A:
+```batch
+start /B python app.py 1>> app.log 2>&1
+```
+
+**Diferencias:**
+- `/B`: Abre proceso sin ventana de comando (sin interfaz gráfica)
+- `1>>`: Append a archivo de log en lugar de sobrescribir
+- Mejor integración con el proceso padre de Jenkins
+
+#### 2. Tiempo de Espera Aumentado
+
+Se agregó espera de 3 segundos después del inicio:
+
+```batch
+timeout /t 3 /nobreak
+```
+
+Esto permite que Flask complete la inicialización, cargue base de datos, etc.
+
+#### 3. Validación POST-DEPLOY
+
+Se agregó verificación explícita que el servidor está escuchando:
+
+```batch
+netstat -ano | findstr ":4000" | findstr "LISTENING" >nul
+if errorlevel 1 (
+    echo ERROR: Servidor no inicio correctamente. Verificar logs.
+    exit /b 1
+)
+echo EXITO: Servidor iniciado correctamente en puerto 4000
+```
+
+**Flujo:**
+1. Busca procesos escuchando en puerto 4000
+2. Verifica que estén en estado LISTENING
+3. Si no encuentra nada, falla el pipeline (exit /b 1)
+4. Si encuentra, registra éxito en logs de Jenkins
+
+### Resultados de Validación
+
+Después de la mejora, el servidor responde correctamente:
+
+```
+Status: 200 OK
+netstat -ano | findstr :4000
+  TCP    0.0.0.0:4000     0.0.0.0:0         LISTENING       32504
+```
+
+No hay más conexiones en estado SYN_SENT. El servidor está completamente funcional.
+
+## Resumen de Cambios Totales
+
+| Versión | Commit | Mejora Principal |
+|---------|--------|------------------|
+| V1 | cf7536f | Condición selectiva + Búsqueda específica de PID |
+| V2 | cee03fd | Comando mejorado + Espera + Validación POST-DEPLOY |
+
+## Flujo Actual del Deploy
+
+```
+1. Checkout del código
+2. Setup de dependencias Python
+3. Build (dummy)
+4. Test (dummy)
+5. Deploy (SI hay cambios en server/ o Jenkinsfile):
+   5.1. Matar proceso en puerto 4000 (específicamente)
+   5.2. Esperar 2 segundos para liberación de puerto
+   5.3. Iniciar Flask con start /B
+   5.4. Esperar 3 segundos para inicialización
+   5.5. Validar que está en LISTENING
+   5.6. Si falla: salir con error
+   5.7. Si éxito: continuar
+6. Post: Reportar resultado
+```
+
 ## Referencias
 
 - Patrón de cambios en Jenkins: https://www.jenkins.io/doc/declarative-pipeline/syntax/#changeset
 - Comando netstat en Windows: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netstat
 - Comando taskkill en Windows: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/taskkill
+- Comando start en Windows: https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/start
+- Flask Initialization: https://flask.palletsprojects.com/en/stable/
