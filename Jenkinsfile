@@ -39,34 +39,27 @@ pipeline {
                 }
             }
             steps {
-                echo 'Desplegando servidor...'
+                echo 'Paso 1: Deteniendo proceso anterior si existe...'
+                bat 'taskkill /F /IM python.exe /T >nul 2>&1 & exit /b 0'
 
-                // Matar proceso en puerto 4000 solo si existe
-                bat '''
-                    netstat -ano | findstr ":4000" | findstr "LISTENING" >nul 2>&1
-                    if not errorlevel 1 (
-                        for /F "tokens=5" %%a in ('netstat -ano ^| findstr ":4000" ^| findstr "LISTENING"') do (
-                            taskkill /PID %%a /F /T >nul 2>&1
-                        )
-                        ping localhost -n 3 >nul
-                    )
-                '''
+                echo 'Paso 2: Esperando que el puerto quede libre...'
+                bat 'ping localhost -n 4 >nul'
 
-                // Arrancar el servidor Flask en segundo plano
+                echo 'Paso 3: Arrancando servidor Flask...'
                 bat 'cd server && start /B python app.py 1>> app.log 2>&1'
 
-                // Esperar a que Flask inicialice
-                bat 'ping localhost -n 5 >nul'
+                echo 'Paso 4: Esperando inicializacion de Flask...'
+                bat 'ping localhost -n 6 >nul'
 
-                // Validar que el servidor esta escuchando
+                echo 'Paso 5: Verificando que el servidor responde...'
                 bat '''
                     netstat -ano | findstr ":4000" | findstr "LISTENING" >nul 2>&1
                     if errorlevel 1 (
-                        echo ERROR: Servidor no inicio correctamente.
-                        type app.log
+                        echo ERROR: El servidor no levanto. Contenido del log:
+                        type server\app.log
                         exit /b 1
                     )
-                    echo EXITO: Servidor corriendo en puerto 4000
+                    echo EXITO: Servidor corriendo en http://localhost:4000
                 '''
             }
         }
