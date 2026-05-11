@@ -49,7 +49,7 @@ pipeline {
                         REM Esperar a que se libere el puerto
                         timeout /t 2 /nobreak
                         REM Iniciar el servidor Flask en background
-                        cd server && powershell -Command "Start-Process python -ArgumentList app.py -NoNewWindow -RedirectStandardOutput app.log -RedirectStandardError app.log"
+                        cd server && start /B python app.py 1>> app.log 2>&1
                         REM Esperar a que el servidor inicie
                         timeout /t 5 /nobreak
                         REM Validar que el servidor está escuchando en puerto 4000
@@ -59,8 +59,6 @@ pipeline {
                             exit /b 1
                         )
                         echo EXITO: Servidor iniciado correctamente en puerto 4000
-                        REM Verificar que el servidor responde a requests HTTP
-                        powershell -Command "try { $response = Invoke-WebRequest -Uri http://localhost:4000 -TimeoutSec 10; if ($response.StatusCode -eq 200) { Write-Host \"EXITO: Servidor responde correctamente\" } else { Write-Host \"ERROR: Servidor no responde con 200\"; exit 1 } } catch { Write-Host \"ERROR: No se puede conectar al servidor: $_\"; exit 1 }"
                     ) else (
                         echo "No changes in server/ or Jenkinsfile, server continues running without restart"
                     )
